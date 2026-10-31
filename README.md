@@ -44,20 +44,21 @@ La app **no** lleva dominio: no es HTTP, se accede por `IP:puerto` desde el jueg
 El VPS está detrás de NAT (la IP pública `181.164.89.26` es del router `192.168.68.1`),
 así que hay que hacer **port forwarding en el router** hacia `192.168.68.222`:
 
-| Protocolo | Puerto externo | Destino |
-|---|---|---|
-| UDP | 16261 | 192.168.68.222:16261 |
-| TCP | 16261 | 192.168.68.222:16261 |
-| UDP | 16262 | 192.168.68.222:16262 |
-| UDP | 8766 | 192.168.68.222:8766 |
-| UDP | 8767 | 192.168.68.222:8767 |
-| TCP | 16262-16272 | 192.168.68.222:16262-16272 |
+| Protocolo | Puerto externo | Destino | Necesario |
+|---|---|---|---|
+| UDP | 16261 | 192.168.68.222:16261 | **si** (puerto principal) |
+| UDP | 16262 | 192.168.68.222:16262 | **si** (direct connection) |
+| TCP | 16262-16272 | 192.168.68.222:16262-16272 | por requerimiento (slots) |
+| UDP | 8766 | 192.168.68.222:8766 | opcional (Steam legacy) |
+| UDP | 8767 | 192.168.68.222:8767 | opcional (Steam legacy) |
 
-- **TCP 16261** es el puerto principal: sin él no se puede entrar por IP (conexión
-  directa). Es el que usa el cliente cuando el server corre con `NOSTEAM=True`.
-- **TCP 16262-16272** son los puertos adicionales por slot (8 slots configurados,
-  `MaxPlayers=8` en el INI). El server los abre a medida que se conectan jugadores.
-- **UDP 8766/8767** los usa el cliente de Steam para la lista de servidores.
+- **UDP 16261 + UDP 16262** son los unicos puertos que hacen falta para que un
+  jugador entre por IP. En Build 42 el trafico de juego va por UDP: el server
+  abre el socket UDP 16261 y el 16262 es el "direct connection port".
+- **TCP 16262-16272** son el rango de slots (8 configurados, `MaxPlayers=8`).
+  Se mantienen abiertos por requerimiento y por compatibilidad.
+- **UDP 8766/8767** los usa el cliente de Steam (legacy).
+- **TCP 27015** (RCON) queda solo en LAN/Tailscale: **no** hacer port forwarding.
 
 Cloudflare no proxea UDP de juegos: la conexión va por IP directa.
 Dentro de la LAN/Tailscale el server también es accesible en `192.168.68.222:16261`

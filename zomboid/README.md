@@ -44,14 +44,19 @@ Si hay que **recrear el mundo** (borrar el volume o cambiar `SERVERNAME`):
 
 | Puerto | Protocolo | Para qué |
 |---|---|---|
-| 16261 | UDP | puerto principal del juego (`PORT`) |
-| 16262 | UDP | `UDPPORT`, conexión directa (`UDPPORT`) |
-| 8766 / 8767 | UDP | cliente de Steam |
-| 16261 | TCP | puerto principal, entrada por IP (directa) |
-| 16262-16272 | TCP | un puerto adicional por slot (modo sin Steam) |
+| 16261 | UDP | puerto principal del juego (`PORT`) — **obligatorio** |
+| 16262 | UDP | `UDPPORT`, "direct connection port" — **obligatorio** |
+| 8766 / 8767 | UDP | cliente de Steam (legacy en B42) |
+| 16262-16272 | TCP | rango de slots (8) — se mantiene por requerimiento |
+| 27015 | TCP | RCON (administración remota), solo LAN/Tailscale |
 
 Con 8 slots el rango TCP es `16262-16272`. Si se sube la cantidad de jugadores,
 ampliar el rango (y su port forwarding) al mismo tiempo.
+
+> **Importante (Build 42)**: el server abre el socket **UDP 16261**; el trafico de
+> juego no va por TCP. Por eso un checker de puertos TCP puede marcar el server
+> como "cerrado" aunque los jugadores entren bien. Lo que hay que abrir en el
+> router es **UDP 16261 y UDP 16262**.
 
 ## Slots (`MaxPlayers`)
 

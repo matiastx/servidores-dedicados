@@ -19,18 +19,19 @@ services:
     # guardado y se pierde el estado.
     stop_grace_period: 120s
     ports:
-      # Juego (puerto principal, UDP).
+      # Juego (puerto principal, UDP). OBLIGATORIO.
       - "16261:16261/udp"
-      # Juego (puerto principal, TCP). Necesario para entrar por IP (conexion
-      # directa sin pasar por el master de Steam) y con NOSTEAM=True.
-      - "16261:16261/tcp"
       # UDPPORT, segunda conexion UDP directa (se escribe en el INI del server).
+      # OBLIGATORIO: sin el, los clientes no pueden conectarse.
       - "16262:16262/udp"
-      # Puertos que usa el cliente de Steam para conectarse.
+      # Puertos que usa el cliente de Steam para conectarse (legacy en B42).
       - "8766:8766/udp"
       - "8767:8767/udp"
-      # Rango TCP para clientes sin Steam: un puerto por slot (+1).
-      # 8 slots -> 16262-16272.
+      # Rango TCP: un puerto por slot. 8 slots -> 16262-16272.
+      # En Build 42 el server ya no los abre de forma nativa (el trafico de
+      # juego va por UDP), pero se mantienen publicados y abiertos en el
+      # firewall por requerimiento de los slots y por compatibilidad con
+      # clientes/versiones que los usan.
       - "16262-16272:16262-16272/tcp"
       # RCON (administracion remota). No se hace port forwarding en el router,
       # asi que queda accesible solo desde la LAN/Tailscale.
