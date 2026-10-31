@@ -30,8 +30,9 @@ services:
       # Nombre del server: SIN espacios ni caracteres especiales. Cambiarlo crea
       # un mundo nuevo (no se pierde el anterior, queda en otra carpeta).
       SERVERNAME: ${SERVERNAME}
-      # Preset de partida: Apocalypse, Beginner, Builder, FirstWeek, SixMonthsLater,
-      # Survival o Survivor.
+      # Preset de partida. En Build 42 la imagen trae:
+      # Apocalypse | Extinction | Outbreak | Rising | SixMonthsLater
+      # Si el preset no existe en la imagen, el entrypoint aborta el arranque.
       SERVERPRESET: ${SERVERPRESET}
       # false = el server no aparece en el navegador del juego (se entra por IP).
       PUBLIC: ${PUBLIC}
