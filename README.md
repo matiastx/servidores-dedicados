@@ -21,16 +21,23 @@ zomboid/
 1. Proyecto **ServidoresDedicados** → ambiente `production`.
 2. Nueva app → **Docker Compose** (repo público `matiastx/servidores-dedicados`).
    - Base Directory: `/zomboid`
-   - Docker Compose Location: `/zomboid/docker-compose.yml`
+   - Docker Compose Location: `/docker-compose.yml` (es **relativa** al base
+     directory: Coolify resuelve `./{base_directory}{docker_compose_location}`)
    - Server: `localhost` (el VPS donde corre Coolify)
-3. **Environment Variables**: copiar `.env.example` y setear `ADMINPASSWORD`
-   (marcarlo como secret / locked).
-4. **Persistent Volumes** (storages):
-   - `/home/steam/Zomboid` → mundo + configuración
-   - `/home/steam/pz-dedicated/steamapps/workshop` → mods descargados
+3. **Environment Variables**: copiar `.env.example` y setearlas en el panel. Los
+   secretos (`RCONPASSWORD`) se marcan como *shown once*. `ADMINPASSWORD` solo
+   hace falta para el primer arranque que crea el mundo (ver `zomboid/README.md`).
+4. **Persistent Volumes**: en apps Docker Compose **no** se define nada en el
+   panel — los volumes van declarados en el compose. Coolify los parsea, los
+   renombra a `{uuid_app}_{nombre}` y los materializa como volumes Docker:
+   - `zomboid-data` → `/home/steam/Zomboid` (mundo + configuración)
+   - `zomboid-workshop` → `/home/steam/pz-dedicated/steamapps/workshop` (mods)
 5. Deploy.
 
 La app **no** lleva dominio: no es HTTP, se accede por `IP:puerto` desde el juego.
+
+> **Límites de recursos**: en apps Docker Compose los campos *Memory* / *CPU* del
+> panel no se aplican. Los límites van en el compose (`mem_limit`, `cpus`).
 
 ## Exposición
 

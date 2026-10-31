@@ -5,8 +5,8 @@ Runbook operativo del server dedicado. Imagen:
 
 ## Arranque
 
-El primer arranque crea el mundo y **exige** `ADMINPASSWORD` en el panel: si falta,
-el entrypoint falla porque el server pide la clave por consola.
+El primer arranque crea el mundo y **exige** `ADMINPASSWORD`: si falta, el
+entrypoint falla porque el server pide la clave por consola.
 
 ```bash
 # en el VPS
@@ -16,13 +16,29 @@ sudo docker logs -f zomboid
 Señales de arranque sano:
 
 ```
-*** INFO: Server is listening on port 16261
+*** SERVER STARTED ***
+*** Steam is enabled
+Server is listening on port 16261 (for Steam connection) and port 16262 (for UDPRakNet connection)
+RCON: listening on port 27015
 ```
 
-El mundo se crea en `/home/steam/Zomboid/Server/<SERVERNAME>/` (storage de Coolify).
+El mundo vive en el volume Docker `cggpgaytrcmy8kimlw4tn45l_zomboid-data`, montado
+en `/home/steam/Zomboid`. Los archivos de configuracion quedan en
+`/home/steam/Zomboid/Server/<SERVERNAME>.ini` y el mapa en
+`/home/steam/Zomboid/Saves/Multiplayer/<SERVERNAME>/`.
 
-**Apenas el mundo esté creado, borrar `ADMINPASSWORD` del panel y redeployar**: el
-entrypoint lo pasa como argumento del server y queda en claro en los logs.
+### ADMINPASSWORD ya no esta en el compose
+
+El compose **no** declara `ADMINPASSWORD`: el entrypoint la pasa como argumento del
+server y queda en claro en los logs. El mundo ya esta creado, asi que la cuenta
+admin conserva su clave inicial (guardada en el archivo de secretos del backup).
+
+Si hay que **recrear el mundo** (borrar el volume o cambiar `SERVERNAME`):
+
+1. Descomentar `ADMINPASSWORD: ${ADMINPASSWORD}` en `docker-compose.yml`.
+2. Setear la variable en Coolify (Resource > Environment Variables).
+3. Deploy, esperar `*** SERVER STARTED ***`.
+4. Borrar la variable de Coolify, volver a descomentarla en el compose y redeployar.
 
 ## Puertos
 
@@ -79,27 +95,35 @@ sudo docker restart zomboid
 
 ## Backups
 
-El storage `/home/steam/Zomboid` es lo único que hay que respaldar (mundo + INIs).
-Copiar en caliente puede dar un mundo inconsistente: detener el container, copiar,
-levantar.
+Lo unico que hay que respaldar es el volume del mundo
+(`cggpgaytrcmy8kimlw4tn45l_zomboid-data` -> `/home/steam/Zomboid`): mapa, saves,
+INIs de configuracion y logs. Copiar en caliente puede dar un mundo inconsistente:
+detener el contenedor, copiar, levantar.
 
 ```bash
 # en el VPS
-sudo docker stop zomboid
-sudo tar czf /tmp/zomboid-$(date +%F).tar.gz -C /data/coolify/applications/<uuid>/<storage> .
-sudo docker start zomboid
+C=$(sudo docker ps -q --filter name=zomboid)
+VOL=/var/lib/docker/volumes/cggpgaytrcmy8kimlw4tn45l_zomboid-data/_data
+
+sudo docker stop -t 120 $C
+sudo tar czf /data/zomboid-backup-$(date +%F).tar.gz -C $VOL .
+sudo docker start $C
 ```
 
-En Coolify no hay S3 configurado, así que el destino del backup hay que elegirlo
-(rsync a otra maquina, S3 externo, etc.).
+Para restaurar: detener el contenedor, descomprimir sobre `$VOL` y volver a levantar.
 
-## Diagnóstico
+En Coolify no hay S3 configurado, asi que el destino del backup hay que elegirlo
+(rsync a otra maquina, S3 externo, etc.). El volume `..._zomboid-workshop` solo
+guarda los mods descargados y se puede re-descargar.
+
+## Diagnostico
 
 ```bash
 sudo docker ps --filter name=zomboid          # estado
-sudo docker logs --tail 100 zomboid           # logs
-sudo ss -ulpn | grep 16261                    # puerto escuchando
-sudo docker port zomboid                      # puertos publicados
+sudo docker logs --tail 100 $(sudo docker ps -q --filter name=zomboid)   # logs
+sudo ss -ulnp | grep 16261                    # puerto escuchando
+sudo docker port $(sudo docker ps -q --filter name=zomboid)   # puertos publicados
+sudo docker inspect $(sudo docker ps -q --filter name=zomboid) --format '{{json .Mounts}}'
 ```
 
 Si el server no aparece en el navegador del juego: `PUBLIC=true`, puerto 16261/UDP
@@ -108,5 +132,17 @@ abierto en el router, y `STEAMVAC=True` para servidores de Steam.
 ## Memoria y CPU
 
 El VPS tiene 4 vCPU y 8 GB de RAM (compartidos con Coolify e InsForge).
-`MEMORY=4096m` + límite de Coolify `6g` deja headroom. Si aparecen OOM kills en el
-host, bajar `MEMORY` a `3072m`.
+
+| Ajuste | Valor | Donde |
+|---|---|---|
+| Heap de la JVM | `MEMORY=3072m` | variable de entorno en Coolify |
+| Limite de RAM del contenedor | `mem_limit: 5g` | `docker-compose.yml` |
+| Limite de CPU del contenedor | `cpus: 3` | `docker-compose.yml` |
+
+**Los limites del panel (Resource > Memory/CPU) NO se aplican a apps Docker
+Compose**: Coolify solo los usa con apps que tienen Dockerfile. Si se cambian los
+limites, editar el compose y redeployear.
+
+Subir `MEMORY` por encima de `3072m` solo si el host no reporta presion de memoria
+(`free -m`): con el VPS compartido, un heap de 4 GB deja al host sin margen.
+
