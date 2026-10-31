@@ -1,0 +1,70 @@
+services:
+  # Project Zomboid dedicated server.
+  # Imagen oficial: https://github.com/Danixu/project-zomboid-server-docker
+  # Tag fijado a proposito: la imagen trae el juego horneado y el entrypoint NO
+  # actualiza el juego salvo FORCEUPDATE=true. Para actualizar hay que cambiar el
+  # tag y redeployar (ver README.md).
+  zomboid:
+    image: danixu86/project-zomboid-dedicated-server:42.21-release-2
+    container_name: zomboid
+    restart: unless-stopped
+    # El entrypoint manda 'quit' a la consola del juego y espera a que el mundo
+    # se guarde. Con los 10s por defecto de Docker el servidor muere a mitad de
+    # guardado y se pierde el estado.
+    stop_grace_period: 120s
+    ports:
+      # Juego (puerto principal, UDP).
+      - "16261:16261/udp"
+      # UDPPORT, segunda conexion UDP directa (se escribe en el INI del server).
+      - "16262:16262/udp"
+      # Puertos que usa el cliente de Steam para conectarse.
+      - "8766:8766/udp"
+      - "8767:8767/udp"
+      # Rango TCP para clientes sin Steam: un puerto por slot (+1).
+      # 8 slots -> 16262-16272.
+      - "16262-16272:16262-16272/tcp"
+    environment:
+      # Cuenta admin del server (obligatoria ADMINPASSWORD en el primer arranque).
+      ADMINUSERNAME: ${ADMINUSERNAME}
+      ADMINPASSWORD: ${ADMINPASSWORD}
+      # Nombre del server: SIN espacios ni caracteres especiales. Cambiarlo crea
+      # un mundo nuevo (no se pierde el anterior, queda en otra carpeta).
+      SERVERNAME: ${SERVERNAME}
+      # Preset de partida: Apocalypse, Beginner, Builder, FirstWeek, SixMonthsLater,
+      # Survival o Survivor.
+      SERVERPRESET: ${SERVERPRESET}
+      # false = el server no aparece en el navegador del juego (se entra por IP).
+      PUBLIC: ${PUBLIC}
+      DISPLAYNAME: ${DISPLAYNAME}
+      # Puertos
+      PORT: ${PORT}
+      UDPPORT: ${UDPPORT}
+      # Memoria de la JVM. MIN/MAX tienen prioridad si estan definido.
+      MEMORY: ${MEMORY}
+      MIN_MEMORY: ${MIN_MEMORY}
+      MAX_MEMORY: ${MAX_MEMORY}
+      # Mods
+      MODFOLDERS: ${MODFOLDERS}
+      # IDs de Workshop separados por punto y coma. Vacio = limpia la lista del INI.
+      WORKSHOP_IDS: ${WORKSHOP_IDS}
+      # IDs de mods locales separados por punto y coma. Vacio = limpia la lista.
+      MOD_IDS: ${MOD_IDS}
+      # 1 = deja intactos Mods/WorkshopItems del INI (gestion manual externa).
+      SELF_MANAGED_MODS: ${SELF_MANAGED_MODS}
+      # Seguridad y red
+      STEAMVAC: ${STEAMVAC}
+      NOSTEAM: ${NOSTEAM}
+      # IP/interfaz donde escucha. Vacio = todas las interfaces.
+      IP: ${IP}
+      RCONPASSWORD: ${RCONPASSWORD}
+      # Varios
+      LANG: ${LANG}
+      FORCEUPDATE: ${FORCEUPDATE}
+      SOFTRESET: ${SOFTRESET}
+      SERVERPRESETREPLACE: ${SERVERPRESETREPLACE}
+      DEBUG: ${DEBUG}
+    # Las persistencias las agrega Coolify como "Persistent Volumes" (storages):
+    #   /home/steam/Zomboid                              -> mundo + configuracion
+    #   /home/steam/pz-dedicated/steamapps/workshop      -> mods descargados
+    # No se declaran volumes aqui a proposito: Coolify inyecta los suyos y evita
+    # que el compose y el panel se pisen en el mismo path.
