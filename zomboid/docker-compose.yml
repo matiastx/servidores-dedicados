@@ -67,8 +67,20 @@ services:
       SOFTRESET: ${SOFTRESET}
       SERVERPRESETREPLACE: ${SERVERPRESETREPLACE}
       DEBUG: ${DEBUG}
-    # Las persistencias las agrega Coolify como "Persistent Volumes" (storages):
-    #   /home/steam/Zomboid                              -> mundo + configuracion
-    #   /home/steam/pz-dedicated/steamapps/workshop      -> mods descargados
-    # No se declaran volumes aqui a proposito: Coolify inyecta los suyos y evita
-    # que el compose y el panel se pisen en el mismo path.
+    # Persistencia. OBLIGATORIO declararlos aqui: en apps Docker Compose, Coolify
+    # NO inyecta los "Persistent Volumes" del panel. Es el parser el que lee estos
+    # volumes, los renombra a "{uuid_app}_{slug}" y crea los volumes Docker.
+    # Si no se declaran, el mundo vive en la capa del contenedor y se pierde en
+    # cada redeploy.
+    volumes:
+      # Mundo (mapas, saves, INIs de configuracion, logs).
+      - zomboid-data:/home/steam/Zomboid
+      # Mods descargados de Steam Workshop.
+      - zomboid-workshop:/home/steam/pz-dedicated/steamapps/workshop
+
+volumes:
+  # Declaracion para que el compose sea valido fuera de Coolify (uso local).
+  # En Coolify estos nombres se reemplazan por "{uuid_app}_zomboid-data" y
+  # "{uuid_app}_zomboid-workshop".
+  zomboid-data:
+  zomboid-workshop:
