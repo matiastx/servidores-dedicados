@@ -23,6 +23,9 @@ services:
       # Rango TCP para clientes sin Steam: un puerto por slot (+1).
       # 8 slots -> 16262-16272.
       - "16262-16272:16262-16272/tcp"
+      # RCON (administracion remota). No se hace port forwarding en el router,
+      # asi que queda accesible solo desde la LAN/Tailscale.
+      - "27015:27015/tcp"
     environment:
       # Cuenta admin del server (obligatoria ADMINPASSWORD en el primer arranque).
       ADMINUSERNAME: ${ADMINUSERNAME}
