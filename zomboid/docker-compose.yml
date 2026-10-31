@@ -8,6 +8,12 @@ services:
     image: danixu86/project-zomboid-dedicated-server:42.21-release-2
     container_name: zomboid
     restart: unless-stopped
+    # Limites del contenedor. En apps Docker Compose Coolify NO aplica los
+    # limits_memory/limits_cpus del panel (solo los usa para apps con
+    # Dockerfile), asi que el limite va aca.
+    # El VPS tiene 8 GB de RAM compartidos con Coolify e InsForge.
+    mem_limit: 5g
+    cpus: 3
     # El entrypoint manda 'quit' a la consola del juego y espera a que el mundo
     # se guarde. Con los 10s por defecto de Docker el servidor muere a mitad de
     # guardado y se pierde el estado.
@@ -29,7 +35,12 @@ services:
     environment:
       # Cuenta admin del server (obligatoria ADMINPASSWORD en el primer arranque).
       ADMINUSERNAME: ${ADMINUSERNAME}
-      ADMINPASSWORD: ${ADMINPASSWORD}
+      # ADMINPASSWORD: OMITIDA a proposito. Solo hace falta para crear el mundo
+      # por primera vez; el entrypoint la pasa como argumento del server y
+      # queda en claro en los logs. El mundo ya esta creado, asi que la cuenta
+      # admin conserva su clave inicial. Si se borra el mundo (ver README),
+      # hay que volver a declararla aqui y setearla en Coolify.
+      # ADMINPASSWORD: ${ADMINPASSWORD}
       # Nombre del server: SIN espacios ni caracteres especiales. Cambiarlo crea
       # un mundo nuevo (no se pierde el anterior, queda en otra carpeta).
       SERVERNAME: ${SERVERNAME}
