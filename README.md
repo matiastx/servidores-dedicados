@@ -47,10 +47,17 @@ así que hay que hacer **port forwarding en el router** hacia `192.168.68.222`:
 | Protocolo | Puerto externo | Destino |
 |---|---|---|
 | UDP | 16261 | 192.168.68.222:16261 |
+| TCP | 16261 | 192.168.68.222:16261 |
 | UDP | 16262 | 192.168.68.222:16262 |
 | UDP | 8766 | 192.168.68.222:8766 |
 | UDP | 8767 | 192.168.68.222:8767 |
 | TCP | 16262-16272 | 192.168.68.222:16262-16272 |
+
+- **TCP 16261** es el puerto principal: sin él no se puede entrar por IP (conexión
+  directa). Es el que usa el cliente cuando el server corre con `NOSTEAM=True`.
+- **TCP 16262-16272** son los puertos adicionales por slot (8 slots configurados,
+  `MaxPlayers=8` en el INI). El server los abre a medida que se conectan jugadores.
+- **UDP 8766/8767** los usa el cliente de Steam para la lista de servidores.
 
 Cloudflare no proxea UDP de juegos: la conexión va por IP directa.
 Dentro de la LAN/Tailscale el server también es accesible en `192.168.68.222:16261`

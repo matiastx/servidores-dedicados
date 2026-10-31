@@ -47,16 +47,37 @@ Si hay que **recrear el mundo** (borrar el volume o cambiar `SERVERNAME`):
 | 16261 | UDP | puerto principal del juego (`PORT`) |
 | 16262 | UDP | `UDPPORT`, conexión directa (`UDPPORT`) |
 | 8766 / 8767 | UDP | cliente de Steam |
-| 16262-16272 | TCP | clientes sin Steam (1 por slot + 1) |
+| 16261 | TCP | puerto principal, entrada por IP (directa) |
+| 16262-16272 | TCP | un puerto adicional por slot (modo sin Steam) |
 
 Con 8 slots el rango TCP es `16262-16272`. Si se sube la cantidad de jugadores,
 ampliar el rango (y su port forwarding) al mismo tiempo.
+
+## Slots (`MaxPlayers`)
+
+El entrypoint **no** expone `MaxPlayers`: el server arranca con 32 y hay que
+cambiarlo a mano en el INI (el valor por defecto de PZ es 32, no 8).
+
+```bash
+# en el VPS (el INI vive en el volume, sobrevive a los redeploys)
+VOL=/var/lib/docker/volumes/cggpgaytrcmy8kimlw4tn45l_zomboid-data/_data
+sudo sed -i 's/^MaxPlayers=.*/MaxPlayers=8/' $VOL/Server/ZomboidMGTSolutions.ini
+sudo docker restart $(sudo docker ps -q --filter name=zomboid)
+```
+
+Si se recrea el mundo, hay que volver a aplicarlo.
 
 ## Jugadores
 
 - Entrar por **IP:puerto** (`181.164.89.26:16261` desde internet, `100.75.207.93:16261`
   desde Tailscale). Project Zomboid no usa dominios para conectarse.
-- Con `PUBLIC=true` el server aparece en el navegador del juego.
+- `NOSTEAM=True` (configurado) permite entrar **sin cuenta de Steam** por TCP.
+  Con `NOSTEAM=False` el server solo acepta clientes de Steam (y deja de abrir
+  el puerto TCP principal).
+- `PUBLIC=true` muestra el server en el navegador del juego. Con `NOSTEAM=True`
+  el server no se anuncia en el master de Steam, asi que la via normal es la IP.
+- El server no tiene password de entrada (`Password=` vacio en el INI): cualquiera
+  que conozca la IP puede entrar. Para cerrarlo, poner `NOSTEAM=False`.
 - Cuenta admin: `ADMINUSERNAME` / `ADMINPASSWORD` (solo la primera vez; después se
   cambia desde adentro del juego).
 

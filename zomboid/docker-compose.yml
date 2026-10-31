@@ -21,6 +21,9 @@ services:
     ports:
       # Juego (puerto principal, UDP).
       - "16261:16261/udp"
+      # Juego (puerto principal, TCP). Necesario para entrar por IP (conexion
+      # directa sin pasar por el master de Steam) y con NOSTEAM=True.
+      - "16261:16261/tcp"
       # UDPPORT, segunda conexion UDP directa (se escribe en el INI del server).
       - "16262:16262/udp"
       # Puertos que usa el cliente de Steam para conectarse.
