@@ -193,7 +193,16 @@ vacío las borra).
 
 - El server **descarga los items del Workshop al arrancar** (Steam los baja a
   `steamapps/workshop/content/108600`, volumen `..._zomboid-workshop`). La primera
-  vez tardó ~15 min con 2.5 GB y puede necesitar un segundo reinicio para cargarlos.
+  vez tardó ~20 min (2.5 GB de descarga + carga). Con los items ya en el volumen el
+  arranque completo es de **~70 s**.
+- **Linux es case-sensitive y el Workshop no.** Varios mods referencian carpetas en
+  minúsculas (`media/animsets/...`, `mods/bandits/...`) que existen como
+  `AnimSets`/`Bandits`. En Windows (cliente) resuelve igual; en el server no, y se
+  pierden esos anim sets. Fix aplicado en el volumen (no está en el repo):
+  22 symlinks `animsets -> AnimSets` en cada `media/` y uno
+  `mods/bandits -> Bandits` en el item `3268487204`. Si una actualización del
+  Workshop borra los symlinks, vuelven a aparecer `FileNotFoundException` en los
+  logs (no impide arrancar).
 - Con este set: `MEMORY=4096m` en Coolify y `mem_limit: 6g` en el compose. Con
   `3072m`/`5g` el cgroup mataba el contenedor.
 - Si aparece `mod mismatch` al conectar, el cliente tiene una versión distinta de
