@@ -24,9 +24,13 @@ services:
       # UDPPORT, segunda conexion UDP directa (se escribe en el INI del server).
       # OBLIGATORIO: sin el, los clientes no pueden conectarse.
       - "16262:16262/udp"
-      # Puertos que usa el cliente de Steam para conectarse (legacy en B42).
-      - "8766:8766/udp"
-      - "8767:8767/udp"
+      # STEAMPORT1/STEAMPORT2: puertos del Steam GameServer (por defecto 8766 y
+      # 8767). El server los usa para responder las consultas del navegador de
+      # servidores de Steam. Se mueven a 16271/16272 porque el router de
+      # Cablevision solo reenvia el rango 16261-16272; con los valores por
+      # defecto el server se registra pero Steam nunca puede consultarlo.
+      - "16271:16271/udp"
+      - "16272:16272/udp"
       # Rango TCP: un puerto por slot. 8 slots -> 16262-16272.
       # En Build 42 el server ya no los abre de forma nativa (el trafico de
       # juego va por UDP), pero se mantienen publicados y abiertos en el
@@ -52,7 +56,8 @@ services:
       # Apocalypse | Extinction | Outbreak | Rising | SixMonthsLater
       # Si el preset no existe en la imagen, el entrypoint aborta el arranque.
       SERVERPRESET: ${SERVERPRESET}
-      # false = el server no aparece en el navegador del juego (se entra por IP).
+      # Public=true + NOSTEAM=false = el server se anuncia y aparece en el
+      # navegador de servidores del juego (el listado "Internet" lo sirve Steam).
       PUBLIC: ${PUBLIC}
       DISPLAYNAME: ${DISPLAYNAME}
       # Puertos
@@ -72,7 +77,18 @@ services:
       SELF_MANAGED_MODS: ${SELF_MANAGED_MODS}
       # Seguridad y red
       STEAMVAC: ${STEAMVAC}
+      # False/vacio = Steam habilitado: el server se registra en Steam y aparece
+      # en el listado publico del juego. True = -nosteam: entrada solo por IP y
+      # el server es invisible para el navegador de servidores.
       NOSTEAM: ${NOSTEAM}
+      # Puertos del Steam GameServer (ver comentario en "ports").
+      STEAMPORT1: ${STEAMPORT1}
+      STEAMPORT2: ${STEAMPORT2}
+      # User-Agent de las llamadas HTTP del juego. PublicServerUtil anuncia el
+      # server en projectzomboid.com y no fija User-Agent, asi que Java manda
+      # "Java/17.x" y Cloudflare responde 403 (managed challenge) en
+      # /server_browser/serverVar.php. Con un UA de navegador el anuncio pasa.
+      JAVA_TOOL_OPTIONS: "-Dhttp.agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
       # IP/interfaz donde escucha. Vacio = todas las interfaces.
       IP: ${IP}
       RCONPASSWORD: ${RCONPASSWORD}
