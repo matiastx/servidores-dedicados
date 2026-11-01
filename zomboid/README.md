@@ -207,6 +207,12 @@ vacío las borra).
   `3072m`/`5g` el cgroup mataba el contenedor.
 - Si aparece `mod mismatch` al conectar, el cliente tiene una versión distinta de
   algún mod: actualizar sus suscripciones en Steam.
+- Si aparece **"La version del articulo del Workshop es diferente a la del servidor"**,
+  el server tiene una copia vieja de algun item. Los versionados viven en
+  `appworkshop_108600.acf` (`manifest` + `timeupdated` por item): ese archivo del
+  volume `..._zomboid-workshop` tiene que coincidir con el de Steam del cliente
+  (`F:\Steam\steamapps\workshop\appworkshop_108600.acf`). Se resuelve reiniciando el
+  contenedor: al arrancar detecta `NeedsUpdate` y baja la version nueva.
 - Un mod nuevo en el cliente **no** se instala solo: hay que agregar su id a
   `WorkshopItems` y su(s) mod id(s) a `Mods` en el INI (con el contenedor detenido).
 
