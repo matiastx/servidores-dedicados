@@ -158,14 +158,49 @@ higiene: el listado que importa es el de Steam.
 
 ## Mods
 
-Variables `WORKSHOP_IDS` (Steam Workshop) y `MOD_IDS` (mods locales), separadas por `;`.
-Ej: `WORKSHOP_IDS=2166000000;2166000001`.
+El set actual es un espejo del cliente: **155 mods / 125 items del Workshop**
+(~2.5 GB, casi todos vehículos KI5 + `damnlib` + libs de ropa/UI). No hay mods de
+mapa, así que `Map=` sigue en `Muldraugh, KY`.
 
-- Los mods del Workshop **se descargan en el segundo arranque** (el primero crea el mundo).
-- Con la lista vacía el entrypoint **borra** `Mods`/`WorkshopItems` del INI.
-- Para administrar la lista a mano: `SELF_MANAGED_MODS=1` y se edita el INI del server
-  (`/home/steam/Zomboid/Server/<SERVERNAME>.ini`).
-- Cada mod agrega tiempo de arranque y RAM: con 8 slots y muchos mods, subir `MEMORY`.
+Se administra con **`SELF_MANAGED_MODS=True`** y las listas escritas directo en el
+INI, no con `WORKSHOP_IDS`/`MOD_IDS`:
+
+```ini
+Mods=<ids separados por ;>
+WorkshopItems=<ids numericos del Workshop separados por ;>
+```
+
+Motivo: `MOD_IDS` son ~2.1 KB y hay ids con apóstrofes y espacios
+(`GanydeBielovzki's Frockin Backstage!`). Pasar eso por una variable de entorno
+depende de cómo la escape Coolify en el `.env` del compose, y si lo hace con
+comillas simples la variable se corta. En el INI no hay quoting: es el formato
+que el juego lee.
+
+Con `SELF_MANAGED_MODS=True` el entrypoint **no toca** `Mods`/`WorkshopItems`;
+sin él, cada arranque reescribe esas líneas desde el entorno (y con el entorno
+vacío las borra).
+
+### Replicar la lista desde el cliente
+
+1. En el cliente, los mods que carga el juego quedan en
+   `%USERPROFILE%\Zomboid\Logs\<fecha>_DebugLog.txt` como líneas
+   `LOG : Mod f:0> loading <modid>.`
+2. El id del Workshop de cada mod sale de
+   `F:\Steam\steamapps\workshop\content\108600\<workshopid>\**\mod.info` (campo `id=`).
+3. `WorkshopItems` = los 125 ids numéricos; `Mods` = los 155 ids de mod.
+
+### Operación
+
+- El server **descarga los items del Workshop al arrancar** (Steam los baja a
+  `steamapps/workshop/content/108600`, volumen `..._zomboid-workshop`). La primera
+  vez tardó ~15 min con 2.5 GB y puede necesitar un segundo reinicio para cargarlos.
+- Con este set: `MEMORY=4096m` en Coolify y `mem_limit: 6g` en el compose. Con
+  `3072m`/`5g` el cgroup mataba el contenedor.
+- Si aparece `mod mismatch` al conectar, el cliente tiene una versión distinta de
+  algún mod: actualizar sus suscripciones en Steam.
+- Un mod nuevo en el cliente **no** se instala solo: hay que agregar su id a
+  `WorkshopItems` y su(s) mod id(s) a `Mods` en el INI (con el contenedor detenido).
+
 
 ## Configuración del mundo
 
