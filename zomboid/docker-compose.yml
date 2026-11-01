@@ -88,7 +88,11 @@ services:
       # server en projectzomboid.com y no fija User-Agent, asi que Java manda
       # "Java/17.x" y Cloudflare responde 403 (managed challenge) en
       # /server_browser/serverVar.php. Con un UA de navegador el anuncio pasa.
-      JAVA_TOOL_OPTIONS: "-Dhttp.agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
+      # Las comillas internas son OBLIGATORIAS: JAVA_TOOL_OPTIONS se parte por
+      # espacios y sin ellas el JVM muere con "Unrecognized option: (Windows",
+      # lo que ademas rompe el chequeo de start-server.sh ("Only 64bit is
+      # supported" y el container queda en crash-loop).
+      JAVA_TOOL_OPTIONS: '-Dhttp.agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"'
       # IP/interfaz donde escucha. Vacio = todas las interfaces.
       IP: ${IP}
       RCONPASSWORD: ${RCONPASSWORD}
