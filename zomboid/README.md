@@ -208,11 +208,23 @@ vacío las borra).
 - Si aparece `mod mismatch` al conectar, el cliente tiene una versión distinta de
   algún mod: actualizar sus suscripciones en Steam.
 - Si aparece **"La version del articulo del Workshop es diferente a la del servidor"**,
-  el server tiene una copia vieja de algun item. Los versionados viven en
-  `appworkshop_108600.acf` (`manifest` + `timeupdated` por item): ese archivo del
-  volume `..._zomboid-workshop` tiene que coincidir con el de Steam del cliente
-  (`F:\Steam\steamapps\workshop\appworkshop_108600.acf`). Se resuelve reiniciando el
-  contenedor: al arrancar detecta `NeedsUpdate` y baja la version nueva.
+  hay un item del Workshop con versiones distintas entre cliente y server. Los
+  versionados viven en `appworkshop_108600.acf` (`manifest` + `timeupdated` + `size`
+  por item): ese archivo del volume `..._zomboid-workshop` tiene que coincidir con
+  el de Steam del cliente (`F:\Steam\steamapps\workshop\appworkshop_108600.acf`).
+  En el log del cliente el item culpable es el unico con
+  `item state CheckItemState -> Fail ID=<id>` (los demas dan `Ready`).
+  Procedimiento cuando un autor sube una version nueva:
+  1. **Cerrar el juego cliente por completo** (no alcanza con reconectar: la
+     instancia cachea el estado de los items al arrancar) y volver a abrirlo, para
+     que Steam baje la version nueva.
+  2. **Reiniciar el contenedor** (`docker restart`): el server solo consulta Steam
+     al arrancar, baja lo que este desactualizado y announce la version actual.
+  3. Verificar que ambos ACF coinciden antes de que entre alguien.
+- Caso real (2026-11-01): el item `3826426915` (ProjectRPGExpanded / "Survivor PDA")
+  fue resubido a las 13:40. El cliente lo bajo a las 13:42 pero con el juego abierto
+  desde las 13:20, y el server lo actualizo a las 13:48. Con ambos lados en
+  `timeupdated=1793551211` / `size=93304633` entra bien.
 - Un mod nuevo en el cliente **no** se instala solo: hay que agregar su id a
   `WorkshopItems` y su(s) mod id(s) a `Mods` en el INI (con el contenedor detenido).
 
