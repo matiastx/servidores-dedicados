@@ -24,13 +24,11 @@ services:
       # UDPPORT, segunda conexion UDP directa (se escribe en el INI del server).
       # OBLIGATORIO: sin el, los clientes no pueden conectarse.
       - "16262:16262/udp"
-      # STEAMPORT1/STEAMPORT2: puertos del Steam GameServer (por defecto 8766 y
-      # 8767). El server los usa para responder las consultas del navegador de
-      # servidores de Steam. Se mueven a 16271/16272 porque el router de
-      # Cablevision solo reenvia el rango 16261-16272; con los valores por
-      # defecto el server se registra pero Steam nunca puede consultarlo.
-      - "16271:16271/udp"
-      - "16272:16272/udp"
+      # NOTA: no hace falta publicar STEAMPORT1/STEAMPORT2 (8766/8767). En
+      # Build 42 el GameServer usa SteamNetworkingSockets (SDR): sale hacia
+      # Valve por puertos efimeros y Steam enruta a los clientes, asi que no
+      # necesita puertos entrantes propios. Ademas B42 ya no acepta
+      # -steamport1/-steamport2 ("unknown option" en los logs).
       # Rango TCP: un puerto por slot. 8 slots -> 16262-16272.
       # En Build 42 el server ya no los abre de forma nativa (el trafico de
       # juego va por UDP), pero se mantienen publicados y abiertos en el
@@ -81,9 +79,6 @@ services:
       # en el listado publico del juego. True = -nosteam: entrada solo por IP y
       # el server es invisible para el navegador de servidores.
       NOSTEAM: ${NOSTEAM}
-      # Puertos del Steam GameServer (ver comentario en "ports").
-      STEAMPORT1: ${STEAMPORT1}
-      STEAMPORT2: ${STEAMPORT2}
       # User-Agent de las llamadas HTTP del juego. PublicServerUtil anuncia el
       # server en projectzomboid.com y no fija User-Agent, asi que Java manda
       # "Java/17.x" y Cloudflare responde 403 (managed challenge) en

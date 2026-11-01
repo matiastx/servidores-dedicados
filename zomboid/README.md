@@ -45,10 +45,14 @@ Si hay que **recrear el mundo** (borrar el volume o cambiar `SERVERNAME`):
 | Puerto | Protocolo | Para qué |
 |---|---|---|
 | 16261 | UDP | puerto principal del juego (`PORT`) — **obligatorio** |
-| 16262 | UDP | `UDPPORT`, "direct connection port" — **obligatorio** |
-| 8766 / 8767 | UDP | cliente de Steam (legacy en B42) |
+| 16262 | UDP | `UDPPORT`, "direct connection port" (RakNet) — **obligatorio** |
 | 16262-16272 | TCP | rango de slots (8) — se mantiene por requerimiento |
 | 27015 | TCP | RCON (administración remota), solo LAN/Tailscale |
+
+En Build 42 **no** hacen falta los puertos 8766/8767 del Steam GameServer: el
+server usa SteamNetworkingSockets (SDR), sale hacia Valve por puertos efímeros y
+Steam enruta a los clientes. Por eso tampoco se publican `STEAMPORT1/2` (y B42
+los rechaza con `unknown option "-steamport1"` en los logs).
 
 Con 8 slots el rango TCP es `16262-16272`. Si se sube la cantidad de jugadores,
 ampliar el rango (y su port forwarding) al mismo tiempo.
@@ -74,17 +78,83 @@ Si se recrea el mundo, hay que volver a aplicarlo.
 
 ## Jugadores
 
-- Entrar por **IP:puerto** (`181.164.89.26:16261` desde internet, `100.75.207.93:16261`
-  desde Tailscale). Project Zomboid no usa dominios para conectarse.
-- `NOSTEAM=True` (configurado) permite entrar **sin cuenta de Steam** por TCP.
-  Con `NOSTEAM=False` el server solo acepta clientes de Steam (y deja de abrir
-  el puerto TCP principal).
-- `PUBLIC=true` muestra el server en el navegador del juego. Con `NOSTEAM=True`
-  el server no se anuncia en el master de Steam, asi que la via normal es la IP.
-- El server no tiene password de entrada (`Password=` vacio en el INI): cualquiera
-  que conozca la IP puede entrar. Para cerrarlo, poner `NOSTEAM=False`.
+Dos formas de entrar:
+
+- **Listado público del juego**: pestaña *Internet* del menú multijugador. El
+  server aparece como `[ARG] Piji Zomboid` (8 slots, sin password).
+- **IP directa**: `181.164.89.26:16261` (internet), `192.168.68.222:16261` (LAN),
+  `100.75.207.93:16261` (Tailscale). Project Zomboid no usa dominios.
+
+`NOSTEAM=False` es **obligatorio** para figurar en el listado: el navegador de
+servidores del juego se alimenta del master server de Steam
+(`zombie/core/znet/ServerBrowser` solo llama a `n_RefreshInternetServers`), y con
+`-nosteam` el server nunca se registra. `PUBLIC=true` en el INI mantiene el
+anuncio activo.
+
+El server no tiene password de entrada (`Password=` vacío en el INI): cualquiera
+que lo vea en el listado puede entrar.
+
 - Cuenta admin: `ADMINUSERNAME` / `ADMINPASSWORD` (solo la primera vez; después se
   cambia desde adentro del juego).
+
+## Listado público (Steam)
+
+Con `NOSTEAM=False` el server abre `SteamAPI_Init()`, se registra en Steam y
+Steam lo publica con la IP/puerto reales. En los logs se ve:
+
+```
+Loading steam_api...
+SteamUtils initialised successfully
+Waiting for response from Steam servers
+*** Steam is enabled
+Server is listening on port 16261 (for Steam connection) and port 16262 (for UDPRakNet connection)
+```
+
+El `[S_API FAIL] Tried to access Steam interface SteamNetworkingUtils004 before
+SteamAPI_Init succeeded` es una carrera del arranque y no impide el registro.
+
+Verificación sin abrir el juego (Steam Web API, pública):
+
+```bash
+curl -s "https://api.steampowered.com/ISteamApps/GetServersAtAddress/v1/?addr=181.164.89.26:16261"
+```
+
+Tiene que devolver `"name":"[ARG] Piji Zomboid"` con `"max":8`, `"password":0` y
+`"appid":108600`. Si devuelve `"servers":[]`, revisar `NOSTEAM`, `PUBLIC` y que el
+contenedor haya terminado de cargar el mundo.
+
+La IP que se anuncia NO se deduce sola (el contenedor ve `10.0.3.3`): va en el INI
+del server, y sobrevive a los redeploys porque el mundo es persistente.
+
+```bash
+# con el contenedor DETENIDO (si no, el server reescribe el INI al guardar)
+VOL=/var/lib/docker/volumes/cggpgaytrcmy8kimlw4tn45l_zomboid-data/_data
+sudo sed -i 's|^server_browser_announced_ip=.*|server_browser_announced_ip=181.164.89.26|' \
+  $VOL/Server/ZomboidMGTSolutions.ini
+```
+
+Si se cambia la IP pública del ISP hay que repetir este paso.
+
+### Anuncio a projectzomboid.com
+
+`zombie/util/PublicServerUtil` hace un GET a
+`https://www.projectzomboid.com/server_browser/serverVar.php` sin fijar
+User-Agent. Java manda `Java/17.x` y Cloudflare responde **403** (managed
+challenge). Por eso el compose define:
+
+```yaml
+JAVA_TOOL_OPTIONS: '-Dhttp.agent="Mozilla/5.0 ... Chrome/141.0.0.0 Safari/537.36"'
+```
+
+Las comillas internas son obligatorias: `JAVA_TOOL_OPTIONS` se parte por espacios
+y sin ellas el JVM no arranca (`Unrecognized option: (Windows`), lo que además
+rompe el chequeo de `start-server.sh` y deja el contenedor en crash-loop con
+`Only 64bit is supported`.
+
+Ese endpoint ya no alimenta ninguna lista pública útil (el panel
+`/server_browser/new/public/` está vacío para todos), así que esto es solo
+higiene: el listado que importa es el de Steam.
+
 
 ## Mods
 
@@ -152,8 +222,10 @@ sudo docker port $(sudo docker ps -q --filter name=zomboid)   # puertos publicad
 sudo docker inspect $(sudo docker ps -q --filter name=zomboid) --format '{{json .Mounts}}'
 ```
 
-Si el server no aparece en el navegador del juego: `PUBLIC=true`, puerto 16261/UDP
-abierto en el router, y `STEAMVAC=True` para servidores de Steam.
+Si el server no aparece en el navegador del juego: `NOSTEAM=False` y
+`PUBLIC=true`, y el contenedor tiene que haber llegado a `*** SERVER STARTED ***`.
+Comprobar con `GetServersAtAddress` (ver *Listado público*). El reenvío de
+16261/UDP en el router sigue siendo necesario para la conexión directa.
 
 ## Memoria y CPU
 
