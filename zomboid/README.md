@@ -314,6 +314,7 @@ El bot (`insforge-backup-bot`) tiene el menú `/pz`:
 | 📜 Log / `/pz log` | Últimas líneas del server |
 | 🛑 Apagar / `/pz apagar` | Apaga el contenedor |
 | ▶️ Encender / `/pz encender` | Enciende el contenedor |
+| 👥 Usuarios / `/pz usuarios` | Listado de usuarios del server y sus roles |
 
 Las acciones que reinician o apagan piden confirmación con botones (`Sí, hacelo` /
 `Cancelar`), que expira a los 5 minutos. El **redeploy real** es `POST {COOLIFY_API}/applications/{uuid}/restart`
@@ -326,6 +327,40 @@ Las acciones que reinician o apagan piden confirmación con botones (`Sí, hacel
 > fallback. Verificado: el redeploy recrea el contenedor y el server vuelve con
 > `SERVER STARTED` y los 156 mods cargados.
 
+### Usuarios y roles del server
+
+Los usuarios no viven en el INI: están en la SQLite del volume
+`.../db/<SERVERNAME>.db`, tabla `whitelist`, con un `role` que apunta a la tabla
+`role` (roles jerárquicos de Build 42, con capabilities granulares):
+
+| rol | Qué puede |
+|---|---|
+| `banned` | No puede entrar |
+| `user` | Solo jugar (default al conectarse la primera vez) |
+| `priority` | Prioridad de conexión, no lo kickean por lag |
+| `observer` | Teleport, god mode, abrir puertas, noclip |
+| `gm` | Game master: items, XP, cheats |
+| `moderator` | Casi todo (kick, ban, server messages), sin editar opciones del server |
+| `admin` | Todos los permisos. La cuenta `admin` de consola es el superusuario interno |
+
+Gestión desde el bot (todo con efecto inmediato vía RCON, sin reiniciar):
+
+| Comando | Qué hace |
+|---|---|
+| `/pz usuarios` | Lista usuarios con rol + último login (UTC-3) + Steam ID |
+| `/pz alta <usuario> [password]` | Alta en el whitelist (queda `user`); sin password genera una aleatoria y la muestra |
+| `/pz borrar <usuario>` | Lo saca del whitelist |
+| `/pz rol <usuario> <rol>` | Cambia el rol (`setaccesslevel`); si el nuevo rol es `banned` lo expulsa |
+
+Todas las operaciones (alta/borrar/rol) piden confirmación con botones y expiran
+a los 5 minutos. La cuenta `admin` de consola está protegida: no se puede borrar
+ni degradar desde el bot.
+
+Comandos equivalentes del juego por RCON (los usa la librería):
+`adduser <u> <pw>`, `removeuserfromwhitelist <u>`, `setaccesslevel <u> <rol>` —
+los 7 roles se aceptan tal cual (`banned/user/priority/observer/gm/moderator/admin`)
+y el server escribe la SQLite al instante.
+
 La librería compartida está en
 `/opt/backups/zomboid_control.py` y se puede usar desde la línea de comandos:
 
@@ -335,6 +370,8 @@ sudo python3 /opt/backups/zomboid_control.py errors       # rutas y mods no carg
 sudo python3 /opt/backups/zomboid_control.py diff         # server vs cliente
 sudo python3 /opt/backups/zomboid_control.py fixlinks     # recrea symlinks
 sudo python3 /opt/backups/zomboid_control.py b42layout    # (re)sintetiza layout B42
+sudo python3 /opt/backups/zomboid_control.py users        # listado de usuarios
+sudo python3 /opt/backups/zomboid_control.py useradd <u> [pw] | userdel <u> | userrole <u> <rol>
 ```
 
 
