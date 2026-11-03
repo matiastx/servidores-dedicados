@@ -315,6 +315,7 @@ El bot (`insforge-backup-bot`) tiene el menú `/pz`:
 | 🛑 Apagar / `/pz apagar` | Apaga el contenedor |
 | ▶️ Encender / `/pz encender` | Enciende el contenedor |
 | 👥 Usuarios / `/pz usuarios` | Listado de usuarios del server y sus roles |
+| 🗺️ Mapa / `/pz mapa` | Submenú de los 3 toggles de mapa (ver abajo) |
 
 Las acciones que reinician o apagan piden confirmación con botones (`Sí, hacelo` /
 `Cancelar`), que expira a los 5 minutos. El **redeploy real** es `POST {COOLIFY_API}/applications/{uuid}/restart`
@@ -372,6 +373,44 @@ sudo python3 /opt/backups/zomboid_control.py fixlinks     # recrea symlinks
 sudo python3 /opt/backups/zomboid_control.py b42layout    # (re)sintetiza layout B42
 sudo python3 /opt/backups/zomboid_control.py users        # listado de usuarios
 sudo python3 /opt/backups/zomboid_control.py useradd <u> [pw] | userdel <u> | userrole <u> <rol>
+sudo python3 /opt/backups/zomboid_control.py map          # estado de los 3 toggles de mapa
+sudo python3 /opt/backups/zomboid_control.py mapvis <1-3> | mapmod <on|off> | mapworld <on|off>
+```
+
+
+### Toggles de mapa
+
+Hay **tres toggles distintos** de "mostrar/ocultar el mapa", cada uno con su
+mecanismo. El bot los maneja desde `🗺️ Mapa`; el toggle 1 es en vivo, los 2 y 3
+reinician el server (con confirmación en el bot):
+
+| # | Toggle | Mecanismo | Efecto |
+|---|---|---|---|
+| 1 | 👁️ Ver jugadores en el mapa (vanilla) | Opción del server `MapRemotePlayerVisibility` | **En vivo**, sin reiniciar |
+| 2 | 🧟 Mod PlayersOnMap (overlay en el mapa) | Primera clave `["Enabled"]` del `Config.lua` del mod | Requiere reinicio |
+| 3 | 🗺️ Acceso al mapa del mundo | SandboxVar `AllowWorldMap` en `Server/<SERVERNAME>_SandboxVars.lua` | Editar con **contenedor DETENIDO** |
+
+Detalles de cada uno:
+
+1. **`MapRemotePlayerVisibility`**: `1=ocultos`, `2=solo amigos`, `3=todos`.
+   Aplica al instante con `changeoption` por RCON (verificado). El bot lo alterna
+   con un botón (`ocultar todos` ↔ `ocultos`); CLI: `mapvis <1-3>`.
+2. **Mod PlayersOnMap** (Workshop item `2732804047`): su config vive en el volume
+   workshop `<...>/content/108600/2732804047/mods/PlayersOnMap/common/Config.lua`.
+   El bot edita la primera `["Enabled"]` top-level y **reinicia el contenedor**
+   para que el mod tome el cambio. CLI: `mapmod on|off`.
+   El estado deseado queda guardado en `/opt/backups/zomboid-map-state.json` y el
+   watcher (`zomboid-mods-watch`) lo re-aplica con `restore_map_toggles()` si
+   Steam re-descarga el item (que volvería la config default).
+3. **`AllowWorldMap`** (SandboxVars): el server reescribe ese `.lua` al apagarse,
+   así que la edición se hace con el contenedor **detenido** — el bot orquesta
+   `stop → edit → start`. CLI: `mapworld on|off`. No toca `AllowMiniMap`.
+
+```bash
+sudo python3 /opt/backups/zomboid_control.py map            # estado de los 3
+sudo python3 /opt/backups/zomboid_control.py mapvis 3       # en vivo
+sudo python3 /opt/backups/zomboid_control.py mapmod off     # + reinicio manual
+sudo python3 /opt/backups/zomboid_control.py mapworld on    # solo con contenedor detenido
 ```
 
 
