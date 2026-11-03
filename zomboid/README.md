@@ -158,9 +158,9 @@ higiene: el listado que importa es el de Steam.
 
 ## Mods
 
-El set actual es un espejo del cliente: **155 mods / 125 items del Workshop**
-(~2.5 GB, casi todos vehículos KI5 + `damnlib` + libs de ropa/UI). No hay mods de
-mapa, así que `Map=` sigue en `Muldraugh, KY`.
+El set actual es un espejo del cliente: **156 mods / 126 items del Workshop**
+(~2.5 GB, casi todos vehículos KI5 + `damnlib` + libs de ropa/UI + Players On Map).
+No hay mods de mapa, así que `Map=` sigue en `Muldraugh, KY`.
 
 Se administra con **`SELF_MANAGED_MODS=True`** y las listas escritas directo en el
 INI, no con `WORKSHOP_IDS`/`MOD_IDS`:
@@ -180,6 +180,53 @@ Con `SELF_MANAGED_MODS=True` el entrypoint **no toca** `Mods`/`WorkshopItems`;
 sin él, cada arranque reescribe esas líneas desde el entorno (y con el entorno
 vacío las borra).
 
+### Build 42 exige carpeta de versión en cada mod
+
+Un mod en Build 42 se registra **solo** si tiene una carpeta de versión:
+
+```
+<workshop>/<item>/mods/<ModId>/
+├── mod.info              # raíz (B41)
+├── media/                # raíz (B41)
+├── common/media/         # opcional, contenido común a todas las versiones
+└── 42.20/                # ← obligatorio: la carpeta de versión
+    ├── mod.info          #   id=..., versionMin=42.20.0
+    └── media/            #   el contenido que se carga
+```
+
+Si el mod solo trae la raíz, el juego **no lo registra**: el arranque avisa
+
+```
+WARN : Mod ... at ZomboidFileSystem.loadModAndRequired> required mod "X" not found
+```
+
+y el mod nunca carga. Es lo que pasaba con **Players On Map** (item `2732804047`,
+actualizado por última vez en 2024-10-20, layout B41 puro): estaba descargado,
+`Ready` en Steam y en el `Mods=` del INI, pero sin carpeta de versión no cargaba
+ni en el server ni en el cliente.
+
+Se verifica mirando el arranque:
+
+```bash
+C=$(sudo docker ps -q --filter 'label=coolify.applicationId=8')
+sudo docker logs --since "$(sudo docker inspect -f '{{.State.StartedAt}}' $C)" $C 2>&1 \
+  | grep -E '> loading |required mod'
+```
+
+Cada línea `loading <modid>` es un mod registrado. Con el set actual:
+**156 cargados / 156 declarados, 0 faltantes**.
+
+El fix se aplica **sintetizando** la carpeta de versión a partir de la raíz
+(`mod.info` de la raíz + `versionMin=`, y copia de `media/`), tanto en el server
+como en el cliente, para que los dos queden idénticos. Lo hace
+`zomboid_control.ensure_b42_layout()` (allowlist explícita por mod) y el
+equivalente en PowerShell del cliente. Es idempotente: si la carpeta ya existe
+con `mod.info` y `media/`, no toca nada.
+
+> Los `NoSuchFileException` de `.../media/AnimSets` y `.../media/actiongroups`
+> que aparecen en el log **son normales**: el juego prueba esas rutas en todos
+> los mods. Los mods nativos tampoco las tienen.
+
 ### Replicar la lista desde el cliente
 
 1. En el cliente, los mods que carga el juego quedan en
@@ -187,7 +234,30 @@ vacío las borra).
    `LOG : Mod f:0> loading <modid>.`
 2. El id del Workshop de cada mod sale de
    `F:\Steam\steamapps\workshop\content\108600\<workshopid>\**\mod.info` (campo `id=`).
-3. `WorkshopItems` = los 125 ids numéricos; `Mods` = los 155 ids de mod.
+3. `WorkshopItems` = los 126 ids numéricos; `Mods` = los 156 ids de mod.
+
+El script `InsForge\tools\zomboid-client-sync.ps1` automatiza el paso 3:
+aplica el layout B42 en el cliente, sube el `appworkshop_108600.acf` del cliente
+al VPS y muestra el diff server vs cliente.
+
+### Auto-sync con Steam (watcher)
+
+En el VPS corre `zomboid-mods-watch.timer` (cada 15 min, `OnBootSec=3min`,
+`Persistent=true`):
+
+1. Compara el `timeupdated` del ACF del server contra la Web API de Steam
+   (`GetPublishedFileDetails`) y avisa qué items tienen versión nueva.
+2. Si hay **0 jugadores** (consulta RCON): reinicia el contenedor para que el
+   juego baje las versiones y avisa por Telegram.
+3. Si hay **jugadores**: difiere (no corta la partida) y avisa una sola vez.
+4. Recrea los symlinks case-insensitive que Steam borra al re-descargar un item.
+5. Re-sintetiza el layout B42 de los mods de la allowlist.
+
+```bash
+sudo systemctl status zomboid-mods-watch.timer
+sudo journalctl -u zomboid-mods-watch -f
+sudo python3 /opt/backups/zomboid-mods-watch.py    # corrida manual
+```
 
 ### Operación
 
@@ -202,7 +272,7 @@ vacío las borra).
   22 symlinks `animsets -> AnimSets` en cada `media/` y uno
   `mods/bandits -> Bandits` en el item `3268487204`. Si una actualización del
   Workshop borra los symlinks, vuelven a aparecer `FileNotFoundException` en los
-  logs (no impide arrancar).
+  logs (no impide arrancar). El watcher los recrea solo.
 - Con este set: `MEMORY=4096m` en Coolify y `mem_limit: 6g` en el compose. Con
   `3072m`/`5g` el cgroup mataba el contenedor.
 - Si aparece `mod mismatch` al conectar, el cliente tiene una versión distinta de
@@ -227,6 +297,45 @@ vacío las borra).
   `timeupdated=1793551211` / `size=93304633` entra bien.
 - Un mod nuevo en el cliente **no** se instala solo: hay que agregar su id a
   `WorkshopItems` y su(s) mod id(s) a `Mods` en el INI (con el contenedor detenido).
+- Ojo al contar items del ACF: Steam lista **cada item dos veces**
+  (`WorkshopItemsInstalled` + `WorkshopItemDetails`). Hay que contar ids únicos.
+
+### Control por Telegram
+
+El bot (`insforge-backup-bot`) tiene el menú `/pz`:
+
+| Botón / comando | Qué hace |
+|---|---|
+| 📊 Estado / `/pz estado` | Encendido, jugadores, RAM, mods, diff con el cliente |
+| 🔍 Buscar updates / `/pz updates` | Items con versión nueva en Steam |
+| ⬇️ Aplicar todas / `/pz aplicar` | Reinicia para aplicar las updates pendientes |
+| ♻️ Reiniciar / `/pz reiniciar` | Reinicio rápido del contenedor |
+| ☁️ Redeploy / `/pz redeploy` | Redeploy real de Coolify (`POST /applications/{uuid}/restart`) |
+| 📜 Log / `/pz log` | Últimas líneas del server |
+| 🛑 Apagar / `/pz apagar` | Apaga el contenedor |
+| ▶️ Encender / `/pz encender` | Enciende el contenedor |
+
+Las acciones que reinician o apagan piden confirmación con botones (`Sí, hacelo` /
+`Cancelar`), que expira a los 5 minutos. El **redeploy real** es `POST {COOLIFY_API}/applications/{uuid}/restart`
+(no existe `/deploy`, da 404).
+
+> **Cloudflare bloquea al VPS**: `https://coolify.mgtsolutions.uk/api/v1/*` desde el
+> VPS devuelve **403 "Attention Required"** (bloquea la IP del datacenter; desde la
+> PC local responde 200). Coolify corre en ese mismo host y escucha en
+> `127.0.0.1:8000`, así que la librería usa `http://127.0.0.1:8000/api/v1` como
+> fallback. Verificado: el redeploy recrea el contenedor y el server vuelve con
+> `SERVER STARTED` y los 156 mods cargados.
+
+La librería compartida está en
+`/opt/backups/zomboid_control.py` y se puede usar desde la línea de comandos:
+
+```bash
+sudo python3 /opt/backups/zomboid_control.py status|pending|mods|players
+sudo python3 /opt/backups/zomboid_control.py errors       # rutas y mods no cargados
+sudo python3 /opt/backups/zomboid_control.py diff         # server vs cliente
+sudo python3 /opt/backups/zomboid_control.py fixlinks     # recrea symlinks
+sudo python3 /opt/backups/zomboid_control.py b42layout    # (re)sintetiza layout B42
+```
 
 
 ## Configuración del mundo
@@ -295,14 +404,16 @@ El VPS tiene 4 vCPU y 8 GB de RAM (compartidos con Coolify e InsForge).
 
 | Ajuste | Valor | Donde |
 |---|---|---|
-| Heap de la JVM | `MEMORY=3072m` | variable de entorno en Coolify |
-| Limite de RAM del contenedor | `mem_limit: 5g` | `docker-compose.yml` |
+| Heap de la JVM | `MEMORY=4096m` | variable de entorno en Coolify |
+| Limite de RAM del contenedor | `mem_limit: 6g` | `docker-compose.yml` |
 | Limite de CPU del contenedor | `cpus: 3` | `docker-compose.yml` |
 
 **Los limites del panel (Resource > Memory/CPU) NO se aplican a apps Docker
 Compose**: Coolify solo los usa con apps que tienen Dockerfile. Si se cambian los
 limites, editar el compose y redeployear.
 
-Subir `MEMORY` por encima de `3072m` solo si el host no reporta presion de memoria
+Subir `MEMORY` por encima de `4096m` solo si el host no reporta presion de memoria
 (`free -m`): con el VPS compartido, un heap de 4 GB deja al host sin margen.
+Con `3072m`/`5g` el cgroup mataba el contenedor (el server llega a ~4.9 GiB con
+los 156 mods).
 
