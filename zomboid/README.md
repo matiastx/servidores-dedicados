@@ -413,6 +413,12 @@ sudo python3 /opt/backups/zomboid_control.py mapmod off     # + reinicio manual
 sudo python3 /opt/backups/zomboid_control.py mapworld on    # solo con contenedor detenido
 ```
 
+Verificado end-to-end en el VPS (2026-11-03, con 0 jugadores y 3 reinicios reales):
+el `Config.lua` del mod **no** lo reescribe el server al apagar (el toggle 2 aguanta
+un reinicio hecho con el server corriendo) y el `AllowWorldMap` **sí** persiste
+después de arrancar (hay que escribirlo con el contenedor detenido, porque el server
+reescribe el `.lua` al apagarse).
+
 
 ## Configuración del mundo
 
