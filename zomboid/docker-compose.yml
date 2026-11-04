@@ -12,8 +12,8 @@ services:
     # limits_memory/limits_cpus del panel (solo los usa para apps con
     # Dockerfile), asi que el limite va aca.
     # El VPS tiene 8 GB de RAM compartidos con Coolify e InsForge.
-    # 6g (no 5g): con los ~155 mods del cliente (94 vehiculos KI5 + libs) el
-    # server necesita ~4 GB de heap + ~1 GB nativo. Con 5g el cgroup lo mataba.
+    # 6g (no 5g): con los 55 mods del cliente (vehiculos KI5 + libs de ropa/UI)
+    # el server necesita ~4 GB de heap + ~1 GB nativo. Con 5g el cgroup lo mataba.
     mem_limit: 6g
     cpus: 3
     # El entrypoint manda 'quit' a la consola del juego y espera a que el mundo
@@ -37,9 +37,12 @@ services:
       # firewall por requerimiento de los slots y por compatibilidad con
       # clientes/versiones que los usan.
       - "16262-16272:16262-16272/tcp"
-      # RCON (administracion remota). No se hace port forwarding en el router,
-      # asi que queda accesible solo desde la LAN/Tailscale.
-      - "27015:27015/tcp"
+      # RCON (administracion remota). Publicado SOLO en loopback: el bot corre
+      # en el host y conecta a 127.0.0.1:27015 (zomboid_control.RCON_HOST).
+      # Con "27015:27015/tcp" quedaba bound a 0.0.0.0 y era alcanzable desde
+      # la LAN y desde los otros contenedores de la red de Coolify. El router
+      # no reenvia el puerto, pero no hay que depender de eso.
+      - "127.0.0.1:27015:27015/tcp"
     environment:
       # Cuenta admin del server (obligatoria ADMINPASSWORD en el primer arranque).
       ADMINUSERNAME: ${ADMINUSERNAME}

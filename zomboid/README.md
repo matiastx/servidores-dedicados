@@ -47,7 +47,17 @@ Si hay que **recrear el mundo** (borrar el volume o cambiar `SERVERNAME`):
 | 16261 | UDP | puerto principal del juego (`PORT`) — **obligatorio** |
 | 16262 | UDP | `UDPPORT`, "direct connection port" (RakNet) — **obligatorio** |
 | 16262-16272 | TCP | rango de slots (8) — se mantiene por requerimiento |
-| 27015 | TCP | RCON (administración remota), solo LAN/Tailscale |
+| 27015 | TCP | RCON (administración remota), **publicado solo en `127.0.0.1`** |
+
+> **RCON no se expone**: el compose publica `127.0.0.1:27015:27015/tcp`, así que
+> el puerto **no** existe en ninguna interfaz externa (ni LAN, ni red de Coolify,
+> ni internet). El bot corre en el host y conecta a `127.0.0.1:27015`
+> (`zomboid_control.RCON_HOST`). UFW además **no** tiene ninguna regla `27015`
+> (la regla `ALLOW IN Anywhere` que había sobrado se eliminó el 2026-11-04).
+> Antes de esa fecha el compose lo publicaba como `27015:27015/tcp` (= `0.0.0.0`),
+> lo que lo dejaba alcanzable desde la LAN y desde los otros contenedores de la
+> red de Coolify (aunque el router no reenvía el puerto, así que nunca llegó a
+> internet).
 
 En Build 42 **no** hacen falta los puertos 8766/8767 del Steam GameServer: el
 server usa SteamNetworkingSockets (SDR), sale hacia Valve por puertos efímeros y
@@ -419,6 +429,22 @@ Las acciones que reinician o apagan piden confirmación con botones (`Sí, hacel
 > `127.0.0.1:8000`, así que la librería usa `http://127.0.0.1:8000/api/v1` como
 > fallback. Verificado: el redeploy recrea el contenedor y el server vuelve con
 > `SERVER STARTED` y los 55 mods cargados.
+
+> ⚠️ **El token de la API de Coolify está vencido** (verificado el 2026-11-04:
+> `GET /applications/cggpgaytrcmy8kimlw4tn45l` responde **401 Unauthorized** con
+> el token de `/opt/backups/coolify.env`). Por eso el botón ☁️ **Redeploy está
+> roto** hasta que se regenere el token. Se regenera en la UI de Coolify
+> (*Settings → API Tokens*) y se actualiza el archivo del VPS:
+> ```bash
+> echo 'COOLIFY_API_KEY=<token nuevo>' | sudo tee /opt/backups/coolify.env
+> ```
+> Mientras tanto, el redeploy se puede hacer desde la UI de Coolify (botón
+> *Restart*) o a mano en el host:
+> ```bash
+> cd /data/coolify/applications/cggpgaytrcmy8kimlw4tn45l && sudo docker compose up -d
+> ```
+> Ese compose ya viene **resuelto** (volúmenes con nombre absoluto, labels,
+> red y `env_file`), así que recrea el contenedor sin perder el mundo.
 
 ### Usuarios y roles del server
 
