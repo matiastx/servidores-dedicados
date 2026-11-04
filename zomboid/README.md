@@ -158,9 +158,19 @@ higiene: el listado que importa es el de Steam.
 
 ## Mods
 
-El set actual es un espejo del cliente: **156 mods / 126 items del Workshop**
-(~2.5 GB, casi todos vehículos KI5 + `damnlib` + libs de ropa/UI + Players On Map).
-No hay mods de mapa, así que `Map=` sigue en `Muldraugh, KY`.
+El set actual es un **espejo exacto del cliente**: **55 mods / 137 items del
+Workshop** (sincronizado el 2026-11-04). No hay mods de mapa, así que `Map=` sigue
+en `Muldraugh, KY`.
+
+Los 55 mods son los que el cliente **carga** (en su orden de carga, que es el orden
+del `Mods=`); los 137 items son **todos** los que el cliente tiene descargados en
+`F:\Steam\steamapps\workshop\content\108600` (incluye los que no se activan, como
+los que son solo mapas o utilidades). La diferencia importa: el `Mods=` define qué
+se carga, el `WorkshopItems=` qué se descarga.
+
+> El `Mods=` **no** lleva los nombres de los items del Workshop sino los
+> `id=` de cada `mod.info` (ej. `PlayersOnMapRedux`, `RepairAnyClothes`), separados
+> por `;`. Los `WorkshopItems=` sí llevan los ids numéricos de 10 dígitos.
 
 Se administra con **`SELF_MANAGED_MODS=True`** y las listas escritas directo en el
 INI, no con `WORKSHOP_IDS`/`MOD_IDS`:
@@ -214,7 +224,7 @@ sudo docker logs --since "$(sudo docker inspect -f '{{.State.StartedAt}}' $C)" $
 ```
 
 Cada línea `loading <modid>` es un mod registrado. Con el set actual:
-**156 cargados / 156 declarados, 0 faltantes**.
+**55 cargados / 55 declarados, 0 faltantes**.
 
 El fix se aplica **sintetizando** la carpeta de versión a partir de la raíz
 (`mod.info` de la raíz + `versionMin=`, y copia de `media/`), tanto en el server
@@ -223,9 +233,34 @@ como en el cliente, para que los dos queden idénticos. Lo hace
 equivalente en PowerShell del cliente. Es idempotente: si la carpeta ya existe
 con `mod.info` y `media/`, no toca nada.
 
-> Los `NoSuchFileException` de `.../media/AnimSets` y `.../media/actiongroups`
-> que aparecen en el log **son normales**: el juego prueba esas rutas en todos
-> los mods. Los mods nativos tampoco las tienen.
+### Carpetas de animaciones: `AdvancedAnimator` las exige
+
+> Antes (2026-11-03) esto se dejaba pasar: los `NoSuchFileException` de
+> `.../media/AnimSets` y `.../media/actiongroups` "eran normales" porque el juego
+> prueba esas rutas en todos los mods. **Ya no lo son**: con 55 mods, el arranque
+> tiraba **990** `NoSuchFileException` (`AdvancedAnimator$1.visitFileFailed`) y el
+> cliente se quejaba al conectar.
+
+AdvancedAnimator recorre, en cada arranque, para cada mod del Workshop:
+
+```
+<mod>/common/media/{AnimSets,actiongroups}
+<mod>/<ver>/media/{AnimSets,actiongroups}
+<mod>/<ver>/common/media/{AnimSets,actiongroups}
+```
+
+Si alguna no existe, tira el error. El fix es **crearlas vacías** (el juego solo
+las recorre) — es la misma reparación que se aplicó al cliente para que los dos
+queden idénticos. Lo hace `zomboid_control.ensure_anim_layout()` (idempotente) y
+el watcher lo re-aplica después de cada re-descarga de Steam, porque al
+re-bajar un item Steam borra esas carpetas.
+
+```bash
+sudo python3 /opt/backups/zomboid_control.py animlayout   # crea las que falten
+```
+
+Verificado 2026-11-04: **1588 + 14 carpetas creadas** y el arranque quedó con
+**0 errores de `AdvancedAnimator`**.
 
 ### Replicar la lista desde el cliente
 
@@ -234,11 +269,64 @@ con `mod.info` y `media/`, no toca nada.
    `LOG : Mod f:0> loading <modid>.`
 2. El id del Workshop de cada mod sale de
    `F:\Steam\steamapps\workshop\content\108600\<workshopid>\**\mod.info` (campo `id=`).
-3. `WorkshopItems` = los 126 ids numéricos; `Mods` = los 156 ids de mod.
+3. `WorkshopItems` = los 137 ids numéricos; `Mods` = los 55 ids de mod.
 
 El script `InsForge\tools\zomboid-client-sync.ps1` automatiza el paso 3:
 aplica el layout B42 en el cliente, sube el `appworkshop_108600.acf` del cliente
 al VPS y muestra el diff server vs cliente.
+
+### Sincronizar el server con el cliente (procedimiento manual)
+
+Hacer que el server sea **idéntico** al cliente es un procedimiento de varios
+pasos, porque "borrar del server lo que el cliente ya no tiene" no alcanza: el
+`Map=` y el `search_folder.sh` del entrypoint **re-agregan** los mapas que
+aparecen en el workshop.
+
+Pasos (con **0 jugadores**; el server se detiene y se vuelve a encender):
+
+1. **Exportar la referencia del cliente**:
+   - `Mods=` → los `id=` de los `mod.info` de los mods que el cliente **carga**,
+     en el orden de carga (sale de las líneas `loading <modid>` del `console.txt`).
+   - `WorkshopItems=` → los ids numéricos de las carpetas descargadas en
+     `F:\Steam\steamapps\workshop\content\108600`.
+2. **Borrar del server los items que el cliente ya no tiene** — del **workshop
+   (carpeta + ACF)**, no solo del INI. Si queda el item en el workshop, el
+   `search_folder.sh` del entrypoint vuelve a copiar su mapa a `media/maps` y el
+   `Map=` se re-mergea: es lo que pasó con **Fort Rock Ridge** (`2806456685`),
+   cuyos chunks daban `invalid chunk` al cliente.
+   Hay que borrarlo de tres lugares: `content/108600/<id>/`, la entrada del
+   `appworkshop_108600.acf` y `media/maps/<nombre del mapa>/` dentro del contenedor.
+3. **Escribir `Mods=`, `WorkshopItems=` y `Map=Muldraugh, KY`** en el INI.
+4. **Regenerar el `WorldDictionary`**: borrar (con el server **detenido**)
+   `WorldDictionary.bin`, `WorldDictionaryLog.lua` y `WorldDictionaryReadable.lua`
+   de `Saves/Multiplayer/<SERVERNAME>/`. El server los regenera al arrancar.
+   Con el diccionario viejo el cliente fallaba al conectar con
+   `Missing dictionary script on client: Base.SMB_steps_FirePole` (entradas stale
+   de un mod que el server ya no cargaba).
+5. **Reiniciar** y verificar con `docker logs --since` (ver abajo).
+
+Verificado el 2026-11-04: 55/55 mods cargados idénticos al cliente, 0
+diferencias, 0 `required mod not found`, 0 `invalid chunk`, 0 `AdvancedAnimator`,
+0 errores de `WorldDictionary`, `SMB_steps` = 0.
+
+#### Verificar el arranque (importante)
+
+El `DebugLog-server.txt` **acumula varios arranques en el mismo archivo** (el
+nombre del archivo es del arranque previo), así que contarlo sobre el archivo da
+números de arranques viejos. Para contar solo el arranque actual hay que usar el
+stdout del contenedor:
+
+```bash
+C=$(sudo docker ps -q --filter 'label=coolify.applicationId=8')
+sudo docker logs --since "$(sudo docker inspect -f '{{.State.StartedAt}}' $C)" $C 2>&1 \
+  | grep -E 'required mod|invalid chunk|AdvancedAnimator|SMB_steps|Fort Rock|SERVER STARTED'
+```
+
+Los `ERROR`/`WARN` que quedan son ruido conocido del build de Steam (presente
+también en el cliente): `AngelCodeFont failed to load page 0 texture
+mainfont_0.png`, `XuiSkin Could not find icon`, `IsoPropertyType.lookupOrDefaultStr`,
+`InventoryItem.loadItem data length not matching`, `Missing ThumpSound for
+breakable object`.
 
 ### Auto-sync con Steam (watcher)
 
@@ -252,6 +340,10 @@ En el VPS corre `zomboid-mods-watch.timer` (cada 15 min, `OnBootSec=3min`,
 3. Si hay **jugadores**: difiere (no corta la partida) y avisa una sola vez.
 4. Recrea los symlinks case-insensitive que Steam borra al re-descargar un item.
 5. Re-sintetiza el layout B42 de los mods de la allowlist.
+6. Recrea las carpetas de animaciones (`ensure_anim_layout()`) que Steam también
+   borra al re-descargar un item.
+7. Re-aplica el estado deseado de los toggles de mapa (`restore_map_toggles()`),
+   pero **solo con 0 jugadores** (los toggles 2 y 3 necesitan el server detenido).
 
 ```bash
 sudo systemctl status zomboid-mods-watch.timer
@@ -326,7 +418,7 @@ Las acciones que reinician o apagan piden confirmación con botones (`Sí, hacel
 > PC local responde 200). Coolify corre en ese mismo host y escucha en
 > `127.0.0.1:8000`, así que la librería usa `http://127.0.0.1:8000/api/v1` como
 > fallback. Verificado: el redeploy recrea el contenedor y el server vuelve con
-> `SERVER STARTED` y los 156 mods cargados.
+> `SERVER STARTED` y los 55 mods cargados.
 
 ### Usuarios y roles del server
 
@@ -371,6 +463,7 @@ sudo python3 /opt/backups/zomboid_control.py errors       # rutas y mods no carg
 sudo python3 /opt/backups/zomboid_control.py diff         # server vs cliente
 sudo python3 /opt/backups/zomboid_control.py fixlinks     # recrea symlinks
 sudo python3 /opt/backups/zomboid_control.py b42layout    # (re)sintetiza layout B42
+sudo python3 /opt/backups/zomboid_control.py animlayout   # crea carpetas de animaciones
 sudo python3 /opt/backups/zomboid_control.py users        # listado de usuarios
 sudo python3 /opt/backups/zomboid_control.py useradd <u> [pw] | userdel <u> | userrole <u> <rol>
 sudo python3 /opt/backups/zomboid_control.py map          # estado de los 3 toggles de mapa
@@ -387,37 +480,48 @@ reinician el server (con confirmación en el bot):
 | # | Toggle | Mecanismo | Efecto |
 |---|---|---|---|
 | 1 | 👁️ Ver jugadores en el mapa (vanilla) | Opción del server `MapRemotePlayerVisibility` | **En vivo**, sin reiniciar |
-| 2 | 🧟 Mod PlayersOnMap (overlay en el mapa) | Primera clave `["Enabled"]` del `Config.lua` del mod | Requiere reinicio |
-| 3 | 🗺️ Acceso al mapa del mundo | SandboxVar `AllowWorldMap` en `Server/<SERVERNAME>_SandboxVars.lua` | Editar con **contenedor DETENIDO** |
+| 2 | 🧟 Overlay de jugadores en el mapa | SandboxVar `PlayersOnMapRedux.Enabled` en `Server/<SERVERNAME>_SandboxVars.lua` | `stop → edit → start` |
+| 3 | 🗺️ Acceso al mapa del mundo | SandboxVar `AllowWorldMap` en `Server/<SERVERNAME>_SandboxVars.lua` | `stop → edit → start` |
 
 Detalles de cada uno:
 
 1. **`MapRemotePlayerVisibility`**: `1=ocultos`, `2=solo amigos`, `3=todos`.
    Aplica al instante con `changeoption` por RCON (verificado). El bot lo alterna
    con un botón (`ocultar todos` ↔ `ocultos`); CLI: `mapvis <1-3>`.
-2. **Mod PlayersOnMap** (Workshop item `2732804047`): su config vive en el volume
-   workshop `<...>/content/108600/2732804047/mods/PlayersOnMap/common/Config.lua`.
-   El bot edita la primera `["Enabled"]` top-level y **reinicia el contenedor**
-   para que el mod tome el cambio. CLI: `mapmod on|off`.
-   El estado deseado queda guardado en `/opt/backups/zomboid-map-state.json` y el
-   watcher (`zomboid-mods-watch`) lo re-aplica con `restore_map_toggles()` si
-   Steam re-descarga el item (que volvería la config default).
-3. **`AllowWorldMap`** (SandboxVars): el server reescribe ese `.lua` al apagarse,
-   así que la edición se hace con el contenedor **detenido** — el bot orquesta
-   `stop → edit → start`. CLI: `mapworld on|off`. No toca `AllowMiniMap`.
+2. **Overlay `PlayersOnMapRedux`**: el overlay que ve el cliente lo aporta el mod
+   **PlayersOnMapRedux** (Workshop item `3792135936`). Su única config en el
+   server es la SandboxVar `SandboxVars.PlayersOnMapRedux.Enabled` — **no** un
+   `Config.lua` del mod. CLI: `mapmod on|off` (hace el `stop → edit → start` solo).
+
+   > ⚠️ El mod **PlayersOnMap** (item `2732804047`) **no** es el que usa el cliente
+   > (el cliente carga `PlayersOnMapRedux`) y su `common/Config.lua` ni siquiera
+   > existe en el server: no sirve para togglear el overlay. Es el único item
+   > con el layout B41 parcheado (ver *Build 42 exige carpeta de versión*).
+
+   El server **reescribe** el `.lua` de SandboxVars al apagarse, así que la
+   edición tiene que hacerse con el contenedor **detenido**. Por eso el CLI y el
+   bot orquestan `stop → edit → start` (no alcanza con editar y reiniciar).
+3. **`AllowWorldMap`** (SandboxVars): misma mecánica — el server reescribe el
+   `.lua` al apagarse, así que se edita con el contenedor **detenido**. CLI:
+   `mapworld on|off`. No toca `AllowMiniMap`.
+
+El estado deseado de los toggles 2 y 3 queda guardado en
+`/opt/backups/zomboid-map-state.json` y el watcher (`zomboid-mods-watch`) lo
+re-aplica con `restore_map_toggles()` si Steam re-descarga el item o el server
+reescribe el `.lua` — **solo si hay 0 jugadores** (si no, difiere y avisa).
 
 ```bash
 sudo python3 /opt/backups/zomboid_control.py map            # estado de los 3
-sudo python3 /opt/backups/zomboid_control.py mapvis 3       # en vivo
-sudo python3 /opt/backups/zomboid_control.py mapmod off     # + reinicio manual
-sudo python3 /opt/backups/zomboid_control.py mapworld on    # solo con contenedor detenido
+sudo python3 /opt/backups/zomboid_control.py mapvis 3       # en vivo, sin reinicio
+sudo python3 /opt/backups/zomboid_control.py mapmod off     # reinicia (stop→edit→start)
+sudo python3 /opt/backups/zomboid_control.py mapworld on    # reinicia (stop→edit→start)
 ```
 
-Verificado end-to-end en el VPS (2026-11-03, con 0 jugadores y 3 reinicios reales):
-el `Config.lua` del mod **no** lo reescribe el server al apagar (el toggle 2 aguanta
-un reinicio hecho con el server corriendo) y el `AllowWorldMap` **sí** persiste
-después de arrancar (hay que escribirlo con el contenedor detenido, porque el server
-reescribe el `.lua` al apagarse).
+Verificado end-to-end en el VPS (2026-11-04, con 0 jugadores y 4 reinicios
+reales): los tres toggles cambian el valor correcto, el server vuelve a anunciar
+`SERVER STARTED` después de cada `stop → edit → start`, y el estado queda
+restaurado. Test reproducible: `InsForge\tools\ops-map-test2.sh` (**19 PASS /
+0 FAIL**).
 
 
 ## Configuración del mundo
@@ -427,8 +531,12 @@ El archivo de reglas del server es
 Editarlo a mano (vía SSH) y reiniciar el contenedor para que aplique.
 
 Ojo: el entrypoint reescribe algunos valores en cada arranque (`Public`, `PublicName`,
-`UDPPort`, `Password`, `RCONPassword`, `Mods`, `WorkshopItems`, `Map`). Lo que no
-esté en esa lista se conserva.
+`UDPPort`, `Password`, `RCONPassword`). Con `SELF_MANAGED_MODS=True` **no** toca
+`Mods` ni `WorkshopItems`, pero **sí re-mergea `Map=`** al final y el
+`search_folder.sh` copia `mods/<mod>/media/maps/*` a `media/maps` (si no existe).
+Por eso un item de mapa que quede en el workshop **vuelve** al `Map=` por más
+que lo borres del INI: hay que borrarlo del workshop (ver *Sincronizar el server
+con el cliente*). Lo que no esté en esa lista se conserva.
 
 ## Reinicio y guardado
 
@@ -497,5 +605,5 @@ limites, editar el compose y redeployear.
 Subir `MEMORY` por encima de `4096m` solo si el host no reporta presion de memoria
 (`free -m`): con el VPS compartido, un heap de 4 GB deja al host sin margen.
 Con `3072m`/`5g` el cgroup mataba el contenedor (el server llega a ~4.9 GiB con
-los 156 mods).
+los 55 mods).
 
