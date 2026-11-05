@@ -10,6 +10,12 @@ Runbook operativo del server dedicado. Imagen:
 >
 > **2026-11-05**: `SELF_MANAGED_MODS=True` (el INI manda, lo gestiona el bot) y
 > nuevo boton **🧩 MODS = Cliente** que deja el server identico al cliente.
+>
+> **2026-11-05 (tarde)**: **reglas internas de orden de carga de mods**
+> (basadas en la guia de XGamingServer) integratedas en el boton
+> **🎛️ MODS on/off**: el panel resume los problemas, avisa antes de activar
+> un mod incompatible y ofrece **ARREGLAR** dejando una variante por grupo.
+> Ver [Reglas internas de orden de carga de mods](#reglas-internas-de-orden-de-carga-de-mods).
 
 ## Resumen del estado actual
 
@@ -19,6 +25,7 @@ Runbook operativo del server dedicado. Imagen:
 | Items de Workshop | **138** | `WorkshopItems=` en el INI |
 | Mods disponibles (activables a mano) | **184** en el workshop del server | catalogo del bot |
 | Overrides de mods (on/off manual) | ninguno por defecto | `/opt/backups/zomboid-mods-override.json` |
+| Reglas internas de orden de carga | activas (resumen en el panel del bot) | `zomboid_control.py` |
 | Referencia del cliente | union 56 mods / 138 items | `/opt/backups/zomboid-client-*` |
 | Preset de partida | `Apocalypse` | `SERVERPRESET` |
 | Mapa | `Muldraugh, KY` | `Map=` en el INI |
@@ -197,6 +204,21 @@ server** con un check al lado, para activarlos o desactivarlos a gusto.
 | `pz_ok_mods_apply` | aplica los cambios (stop -> INI -> start -> verificar) |
 | `pz_mods_reset` | borra los overrides y vuelve a la base del cliente |
 
+Callbacks de las reglas internas (ver
+[Reglas internas de orden de carga de mods](#reglas-internas-de-orden-de-carga-de-mods)):
+
+| Boton | Que hace |
+|---|---|
+| `pz_mods_val` | detalle de los problemas del orden de carga |
+| `pz_mods_fix` | lista los grupos de mods que no pueden convivir |
+| `pz_mods_fix_g:<clave>` | muestra las variantes de un grupo |
+| `pz_mods_keep:<clave>:<hash>` | elige que variante conservar |
+| `pz_ok_mods_fix:<clave>:<hash>` | confirma el arreglo (expira a los 5 min) |
+| `pz_ok_mods_tog:<hash>:<pag>` | "⚠️ Activar igual" (2º paso, expira a los 5 min) |
+
+La `clave` del grupo es `sha1(miembros ordenados)[:8]`: es **estable** entre
+reinicios, asi que el mismo grupo siempre tiene el mismo boton.
+
 El check muestra el estado **configurado**; un `🔄` marca los mods cuyo estado
 difiere del que tiene el server ahora (cambio pendiente de aplicar).
 
@@ -223,10 +245,18 @@ set efectivo = (base UNION "on") - "off"
   efectivo, no la base pelada.
 
 **Orden de carga.** Se conserva el orden actual del server; los mods apagados
-desaparecen y los activados a mano van al final (o justo despues de su
-dependencia activa). Si el cliente impone otro orden, se adopta el de la
-**capa 2** (`f:0 st:0`) — la *union* arranca por la capa local, asi que usar sus
-posiciones pondria los mods en otro lugar.
+desaparecen y los activados a mano se insertan con la posicion que les da la
+regla: **despues de su requisito activo**, si no tienen ninguno **al final**,
+y si eso deja varias posiciones validas se desempata por **categoria**
+(framework -> mapa -> vehiculo -> arma/item -> building/crafting -> UI ->
+overhaul, el orden de la guia de XGamingServer). Si el cliente impone otro
+orden, se adopta el de la **capa 2** (`f:0 st:0`) — la *union* arranca por la
+capa local, asi que usar sus posiciones pondria los mods en otro lugar.
+
+> No se reordena lo que ya esta cargado: el `Mods=` del server tiene que
+> seguir siendo el de la **capa 2** del cliente o los jugadores ven distinto
+> contenido. La guia se usa solo como criterio de desempate al insertar algo
+> nuevo.
 
 **Dependencias.** El bot escanea el `mod.info` de cada mod del workshop (el de
 la subcarpeta de version, que es el que carga B42) y avisa:
@@ -245,6 +275,92 @@ incluidos). El escaneo tarda ~0.1 s y se cachea 5 min.
 Verificado el 2026-11-05 end-to-end en el VPS: se desactivo `87cruiser`, se
 aplico (el server reinicio y cargo **55/55** mods), se reseteo y se volvio a
 aplicar (**56/56**). El orden del `Mods=` quedo identico a la capa 2.
+
+### Reglas internas de orden de carga de mods
+
+Reglas propias del server, derivadas a fondo de la guia de
+[XGamingServer](https://xgamingserver.com/docs/project-zomboid/mod-load-order),
+que se respetan al **agregar, quitar, activar o desactivar** mods. Viven en
+`zomboid_control.py` y estan integratedas en el boton **🎛️ MODS on/off**.
+
+**De donde salen las reglas, por prioridad:**
+
+1. **Campos nativos del juego** (leidos del `mod.info`): `require=` (el
+   requisito carga antes), `loadmodafter=` / `loadafter=`, `incompatible=` (no
+   pueden convivir), `pack=` (grupo excluyente: maximo uno activo) y
+   `versionmin=` (version minima del juego que soporta el mod).
+2. **Grafo de archivos**: que mods pisan los mismos archivos. Se calcula con la
+   misma resolucion de carpetas que usa el juego. El juego carga en orden y
+   **gana el ultimo** del `Mods=`.
+3. **Guia de XGamingServer** (framework -> mapa -> vehiculo -> arma/item ->
+   building/crafting -> UI -> overhaul): se usa **solo como desempate** al
+   insertar un mod nuevo. **No** reordena lo que ya esta cargado.
+
+> **Desviacion documentada de la guia.** La guia pide mantener `Mods` y
+> `WorkshopItems` en el mismo orden. En B42 **no aplica**: son namespaces
+> distintos (`Mods` = ids de mod en orden de carga; `WorkshopItems` = ids del
+> Workshop a descargar). Hoy hay **56 mods y 138 items**: la correspondencia
+> 1:1 es imposible. El juego usa `Mods` para el orden y `WorkshopItems` solo
+> para que se descargue el contenido.
+
+**Modelo de resolucion de archivos** (verificado contra el log real del server:
+*winners 354/354 correctos, 0 proveedores perdidos*):
+
+```
+contenido(mod) = <mod>/common/**
+              + <mod>/<version>/common/**
+              + <mod>/<version>/**   (excluyendo el subdirectorio common/)
+<version> = carpeta numerica mas alta <= version del juego (42.21)
+```
+
+> **Bug encontrado y corregido el 2026-11-05**: el metadata de los mods unia
+> el `require`/`incompatible` de **todas** las carpetas de version. Eso metia
+> dependencias falsas del `mod.info` raiz de B41 (`TombBodyCustom` pedia
+> `SpnCharCustom`, que no existe; la 42.13 que carga el juego pide `SPNCC`) y
+> subia el conteo de incompatibles. Ahora la fuente primaria es **la carpeta
+> de version que carga el juego**; el `versionmin` si se toma como el maximo
+> de todas (por eso `CleanUI` avisa que pide 42.22).
+
+**Estado real del server** (medido el 2026-11-05, 56 mods, juego 42.21.0):
+
+| Metrica | Valor |
+|---|---|
+| Incompatibles activos (pares unicos) | **41** (56 pares dirigidos) |
+| Pack `Seasons` con 5 variants activos | **1** (deberia haber 1) |
+| Violaciones de `require` / `loadmodafter` | **0** |
+| Pares que se pisan archivos | **103** (ganador vs perdedor) · **240** (todos vs todos) |
+| Paths en choque | **355** |
+| `versionmin` > version del juego | **CleanUI** (pide 42.22, corre 42.21) |
+| `require` inexistentes | `damnlib` (93 mods de vehiculos), `SM4BootsExpandedB42`, `SM4BootsExpandedB42VanillaONLY` |
+
+> El juego **no** aplica `incompatible=`: los mods incompatibles se cargan
+> igual y solo se pisan archivos (gana el ultimo del `Mods=`). Por eso la regla
+> es **avisar**, no bloquear en runtime.
+>
+> `CleanUI` (pide juego 42.22, corre 42.21) se **marca y avisa**: no se
+> desactiva solo, pero **bloquea su activacion** mientras el server no se
+> actualice.
+
+**Que hace el bot:**
+
+- El panel **🎛️ MODS** muestra el **resumen** (criticos / altos / medios) y
+  agrega los botones **🔎 Problemas** y **🛠 ARREGLAR**.
+- **🔎 Problemas** (`pz_mods_val`) lista los hallazgos por severidad, con los
+  problemas estructurales primero (packs, incompatibilidades, dependencias).
+- **Activar** un mod con problema **critico** (dependencia faltante,
+  incompatible activo, pack excluyente) **no lo activa**: muestra los motivos
+  y pide un **2º paso explicito** ("⚠️ Activar igual", expira a los 5 min).
+- **Desactivar** avisa cuantos mods activos dependen de el, pero no bloquea.
+- **🛠 ARREGLAR** (`pz_mods_fix`) lista los grupos de conflicto; al elegir uno
+  muestra sus variantes y **exactamente que cambia** antes de aplicar
+  (incluye el aviso de jugadores conectados). Deja **una variante por grupo**.
+- La validacion se cachea 120 s en el bot; en el server validar tarda
+  **0.04 s**.
+
+En el server hay **2 grupos de conflicto** hoy: el pack `Project Seasons` (5
+variantes activas) y el grupo de texturas del cuerpo (`SPNRetexture*` /
+`TombBody*` / `SPNCC*`). La propuesta por defecto para Seasons es
+`Project_Seasons_B42`.
 
 ### Los 56 mods
 
@@ -433,7 +549,7 @@ sudo docker compose up -d
 | **Estado** | estado del server |
 | **Buscar updates** | items de Workshop desactualizados |
 | **🧩 MODS = Cliente** | deja el server identico al cliente (ver [MODS = Cliente](#mods--cliente-boton-del-bot)) |
-| **🎛️ MODS on/off** | listado de los 184 mods del server con check para activar/desactivar (ver [MODS on/off](#mods-onoff-boton-del-bot)) |
+| **🎛️ MODS on/off** | listado de los 184 mods del server con check para activar/desactivar + reglas de carga (ver [MODS on/off](#mods-onoff-boton-del-bot)) |
 | **👥 Usuarios** | submenu con botones: listado -> usuario -> eliminar / cambiar rol |
 | **🗺️ Mapa** | los tres toggles de la tabla de arriba |
 | **Aplicar todas** | reinicia aplicando las updates de Steam |
@@ -450,6 +566,12 @@ El submenu de **MODS on/off** es a botones tambien: pagina de 8 mods con
 `✅`/`❌`, tocá uno para alternarlo, y despues **✅ Aplicar cambios** (reinicia)
 o **↩️ Volver a la base** (descarta los overrides). El comando `/pz mods on/off`
 abre el mismo listado.
+
+El mismo panel tiene el resumen de las **reglas de carga** y los botones
+**🔎 Problemas** y **🛠 ARREGLAR**: activar un mod con conflicto critico pide
+un 2º paso ("⚠️ Activar igual") y **ARREGLAR** deja una variante por grupo,
+mostrando que cambia antes de aplicar. Ver
+[Reglas internas de orden de carga de mods](#reglas-internas-de-orden-de-carga-de-mods).
 
 Las operaciones que cambian el estado (alta/baja/rol, sincronizacion de mods,
 toggles que reinician) piden **confirmacion con boton**, y la confirmacion
@@ -485,8 +607,9 @@ Lo que se hizo el 2026-11-04, en orden:
 10. Actualizar la DB de Coolify (env vars cifradas + `docker_compose`).
 
 Los scripts de este paso viven en `G:\Proyectos\InsForge\tools\`
-(`ops-deploy-recreate.sh`, `ops-restore-whitelist.sh`, `ops-final-check.sh`,
-`ops-update-coolify-db.sh`). No se versionan: son de un solo uso.
+(`ops-deploy-recreate.sh`, `ops-restore-whitelist.sh`, `ops-reapply-ini.sh`,
+`ops-final-check.sh`, `ops-update-coolify-db.sh`). No se versionan: quedan
+solo en la PC.
 
 ### Verificacion del arranque
 
