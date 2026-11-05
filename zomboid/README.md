@@ -6,7 +6,7 @@ Runbook operativo del server dedicado. Imagen:
 
 > **Estado**: recreado desde cero el **2026-11-04**. Mundo nuevo, INI nuevo,
 > SandboxVars nuevas y DB de usuarios nueva. Se conservaron los items de
-> Workshop (hoy **138**, identicos a los del cliente) y se restauró la whitelist.
+> Workshop (hoy **139**) y se restauró la whitelist.
 >
 > **2026-11-05**: `SELF_MANAGED_MODS=True` (el INI manda, lo gestiona el bot) y
 > nuevo boton **🧩 MODS = Cliente** que deja el server identico al cliente.
@@ -16,15 +16,21 @@ Runbook operativo del server dedicado. Imagen:
 > **🎛️ MODS on/off**: el panel resume los problemas, avisa antes de activar
 > un mod incompatible y ofrece **ARREGLAR** dejando una variante por grupo.
 > Ver [Reglas internas de orden de carga de mods](#reglas-internas-de-orden-de-carga-de-mods).
+>
+> **2026-11-05 (noche)**: **auto-descarga de dependencias faltantes**: cuando un
+> mod pide con `require=` algo que no esta en el workshop del server, el bot
+> ofrece bajarlo del Workshop y activarlo. El contador de requires se separo
+> en "entre los activos" y "no activables todavia".
+> Ver [Auto-descarga de dependencias faltantes](#auto-descarga-de-dependencias-faltantes).
 
 ## Resumen del estado actual
 
 | Que | Valor | Donde vive |
 |---|---|---|
-| Mods cargados | **56** (los mismos que carga el cliente) | `Mods=` en el INI |
-| Items de Workshop | **138** | `WorkshopItems=` en el INI |
-| Mods disponibles (activables a mano) | **184** en el workshop del server | catalogo del bot |
-| Overrides de mods (on/off manual) | ninguno por defecto | `/opt/backups/zomboid-mods-override.json` |
+| Mods cargados | **57** (los 56 del cliente + `damnlib`) | `Mods=` en el INI |
+| Items de Workshop | **139** | `WorkshopItems=` en el INI |
+| Mods disponibles (activables a mano) | **186** en el workshop del server | catalogo del bot |
+| Overrides de mods (on/off manual) | `damnlib` en `on` (el resto segun se use el bot) | `/opt/backups/zomboid-mods-override.json` |
 | Reglas internas de orden de carga | activas (resumen en el panel del bot) | `zomboid_control.py` |
 | Referencia del cliente | union 56 mods / 138 items | `/opt/backups/zomboid-client-*` |
 | Preset de partida | `Apocalypse` | `SERVERPRESET` |
@@ -33,7 +39,7 @@ Runbook operativo del server dedicado. Imagen:
 | Jugadores maximos | 8 slots (TCP `16262-16272`) | compose |
 | RCON | `127.0.0.1:27015` (solo loopback) | compose |
 | Mundo | nuevo (2026-11-04) | volume `zomboid-data` |
-| Arranque | ~80 s con los 56 mods | - |
+| Arranque | ~80 s con los 57 mods | - |
 
 ## Arranque
 
@@ -120,7 +126,7 @@ Desde el 2026-11-05 la verdad vive en **el INI del server**, no en el compose:
 |---|---|---|
 | `SELF_MANAGED_MODS` | `True` | el entrypoint **no** toca `Mods=` / `WorkshopItems=`; quedan bajo control del bot |
 | `MOD_IDS` | 56 ids, 894 chars | se mantiene **alineado** con el INI (el bot lo actualiza junto con el INI) |
-| `WORKSHOP_IDS` | 138 ids, 1518 chars | idem |
+| `WORKSHOP_IDS` | 139 ids, 1542 chars | idem |
 
 > **Por que `True`.** Con `False` el entrypoint reescribe `Mods=` y
 > `WorkshopItems=` en cada arranque a partir del env, asi que cualquier cambio
@@ -192,7 +198,7 @@ El bot agrego el item, espero la descarga, reparo el layout y quedo
 
 ### MODS on/off (botón del bot)
 
-El botón **🎛️ MODS on/off** lista **los 184 mods que hay en el workshop del
+El botón **🎛️ MODS on/off** lista **los 186 mods que hay en el workshop del
 server** con un check al lado, para activarlos o desactivarlos a gusto.
 
 | Boton | Que hace |
@@ -215,6 +221,8 @@ Callbacks de las reglas internas (ver
 | `pz_mods_keep:<clave>:<hash>` | elige que variante conservar |
 | `pz_ok_mods_fix:<clave>:<hash>` | confirma el arreglo (expira a los 5 min) |
 | `pz_ok_mods_tog:<hash>:<pag>` | "⚠️ Activar igual" (2º paso, expira a los 5 min) |
+| `pz_mods_dep:<hash_dep>:<hash_mod>` | confirma la descarga de una dependencia faltante |
+| `pz_ok_mods_dep:<hash_dep>:<hash_mod>` | descarga la dependencia y activa el mod (expira a los 5 min) |
 
 La `clave` del grupo es `sha1(miembros ordenados)[:8]`: es **estable** entre
 reinicios, asi que el mismo grupo siempre tiene el mismo boton.
@@ -264,12 +272,14 @@ la subcarpeta de version, que es el que carga B42) y avisa:
 - al **activar** un mod, que requisitos suyos no van a estar activos;
 - al **desactivar** un mod, cuantos mods activos dependen de el.
 
-> `damnlib` es requisito de **93** mods de vehiculos y **no esta en el
-> workshop**: activarlos sin el no va a funcionar. El bot lo avisa.
+> `damnlib` ("that DAMN Library") es requisito de **93** mods de vehiculos KI5
+> y **no estaba en el workshop** del server. Con el bot ahora se puede
+> **descargar solo** (ver
+> [Auto-descarga de dependencias faltantes](#auto-descarga-de-dependencias-faltantes)).
 
 **Catalogo.** Se arma escaneando
 `<volumen workshop>/content/108600/<item>/mods/<mod>/**/mod.info`. En el server
-hay **138 items** y **184 mods unicos** (todos los 56 del `Mods=` estan
+hay **139 items** y **186 mods unicos** (todos los mods del `Mods=` estan
 incluidos). El escaneo tarda ~0.1 s y se cachea 5 min.
 
 Verificado el 2026-11-05 end-to-end en el VPS: se desactivo `87cruiser`, se
@@ -299,7 +309,7 @@ que se respetan al **agregar, quitar, activar o desactivar** mods. Viven en
 > **Desviacion documentada de la guia.** La guia pide mantener `Mods` y
 > `WorkshopItems` en el mismo orden. En B42 **no aplica**: son namespaces
 > distintos (`Mods` = ids de mod en orden de carga; `WorkshopItems` = ids del
-> Workshop a descargar). Hoy hay **56 mods y 138 items**: la correspondencia
+> Workshop a descargar). Hoy hay **57 mods y 139 items**: la correspondencia
 > 1:1 es imposible. El juego usa `Mods` para el orden y `WorkshopItems` solo
 > para que se descargue el contenido.
 
@@ -321,7 +331,7 @@ contenido(mod) = <mod>/common/**
 > de version que carga el juego**; el `versionmin` si se toma como el maximo
 > de todas (por eso `CleanUI` avisa que pide 42.22).
 
-**Estado real del server** (medido el 2026-11-05, 56 mods, juego 42.21.0):
+**Estado real del server** (medido el 2026-11-05, 57 mods, juego 42.21.0):
 
 | Metrica | Valor |
 |---|---|
@@ -331,7 +341,7 @@ contenido(mod) = <mod>/common/**
 | Pares que se pisan archivos | **103** (ganador vs perdedor) · **240** (todos vs todos) |
 | Paths en choque | **355** |
 | `versionmin` > version del juego | **CleanUI** (pide 42.22, corre 42.21) |
-| `require` inexistentes | `damnlib` (93 mods de vehiculos), `SM4BootsExpandedB42`, `SM4BootsExpandedB42VanillaONLY` |
+| `require` inexistentes | **0 entre los mods activos** · 2 mods no activables todavia (`SM4BootsExpandedB42`, `SM4BootsExpandedB42VanillaONLY`) |
 
 > El juego **no** aplica `incompatible=`: los mods incompatibles se cargan
 > igual y solo se pisan archivos (gana el ultimo del `Mods=`). Por eso la regla
@@ -362,6 +372,68 @@ variantes activas) y el grupo de texturas del cuerpo (`SPNRetexture*` /
 `TombBody*` / `SPNCC*`). La propuesta por defecto para Seasons es
 `Project_Seasons_B42`.
 
+### Auto-descarga de dependencias faltantes
+
+Algunos mods piden con `require=` un mod que **no esta en el workshop del
+server**. El catalogo del server solo conoce los items **ya bajados** (escanéa
+el volumen del workshop), asi que no puede mapear `require` -> item de
+Workshop para algo que todavia no esta descargado.
+
+| Dependencia | Item de Workshop | Quien la pide | Exclusiva con |
+|---|---|---|---|
+| `damnlib` ("that DAMN Library") | **3171167894** | 93 mods de vehiculos KI5 | - |
+| `SM4BootsExpandedB42` | **2850935956** | `TombBodyCompatBootsExp` | `SM4BootsExpandedB42VanillaONLY` |
+| `SM4BootsExpandedB42VanillaONLY` | **2850935956** | `TombBodyCompatBootsExpVanilla` | `SM4BootsExpandedB42` |
+
+> Las dos variantes de Boots Expanded son **alternativas** del mismo item
+> ("enable only one base edition"): nunca pueden convivir. El bot rechaza la
+> segunda si la primera ya esta activa.
+
+**Como funciona.** Para que un `require` quede cumplido hacen falta las **dos**
+cosas:
+
+- `WorkshopItems=<item>` -> el **juego** baja el contenido del Workshop. El
+  `entry.sh` **no** descarga nada (solo repara el layout): quien baja los items
+  es el juego, al arrancar, usando su cliente de Steam.
+- `Mods=<mod_id>` -> el mod **carga**. El `require` se chequea contra los mods
+  **cargados**, no contra los descargados.
+
+**El flujo en el bot** (2 pasos):
+
+1. Tocás un mod que necesita una dependencia -> la pantalla bloqueada ofrece
+   **⬇️ Descargar y activar «mod»** (`pz_mods_dep:<hash>:<hash>`), con el item
+   de Workshop y la nota de la dependencia.
+2. Confirmacion (expira a los 5 min) -> `pz_ok_mods_dep:<hash>:<hash>` ->
+   agrega el override `on` de la dependencia + activa el mod -> se aplica:
+   escribe el INI, actualiza el env de Coolify, reinicia, **espera la
+   descarga** (timeout 300 s), repara el layout y verifica.
+
+**El contador de requires.** Antes contaba los requires inexistentes de **todo
+el catalogo** (decia 3 cuando para los mods **activos** eran 0). Ahora se
+separan los dos alcances y se muestran los dos numeros:
+
+- **0** requires inexistentes entre los mods **activos**;
+- **95** mods del catalogo que no se pueden activar hasta bajar su
+  dependencia (**2** hoy, las dos variantes de Boots Expanded).
+
+El panel 🎛️ MODS y la pantalla 🔎 Problemas muestran los dos numeros y, si
+corresponde, cuales se pueden bajar solas.
+
+**Probado end-to-end en el VPS** (2026-11-05, con 0 jugadores conectados):
+`damnlib` se bajo solo (138 -> **139 items**), quedo cargado en el `Mods=` y el
+server arranco con `SERVER STARTED` y **0 errores de animacion**. El contador
+paso de 95 a 2 no activables.
+
+> **Bug encontrado con esa prueba (y corregido)**: el juego **arranca antes** de
+> que los items nuevos esten en disco. Cuando los baja, el layout sigue roto
+> (`AnimSets` vs `animsets`: en Linux es case-sensitive) y las animaciones de
+> ese item **no cargan** (`AnimNode.Parse` / `FileNotFoundException`). Ahora,
+> despues de reparar el layout, el bot **reinicia una vez mas** para que el
+> server lea los archivos ya reparados.
+
+> Los jugadores tienen que tener el item descargado en su cliente de Steam para
+> ver el mismo contenido que el server.
+
 ### Los 56 mods
 
 Los 56 que carga el cliente (orden de carga):
@@ -384,6 +456,14 @@ PlayersOnMapRedux;TrueLineOfSight
 > `TombBodyCompat` es el mod 56: estaba en la lista del cliente
 > (`mods/default.txt`) y el cliente lo carga. La referencia anterior tenia 55 y
 > se quedo desactualizada.
+>
+> El server carga **uno mas**: `damnlib` (la libreria base de los vehiculos
+> KI5), que se agrego con el boton de descarga de dependencias. Va **primero**
+> (es categoria *framework*), asi que el `Mods=` real es:
+>
+> ```
+> damnlib;RepairAnyClothes;89def110;FH;SpnHair;87cruiser;EasyConfigChucked;...
+> ```
 
 ### El watcher de Workshop
 
@@ -549,7 +629,7 @@ sudo docker compose up -d
 | **Estado** | estado del server |
 | **Buscar updates** | items de Workshop desactualizados |
 | **🧩 MODS = Cliente** | deja el server identico al cliente (ver [MODS = Cliente](#mods--cliente-boton-del-bot)) |
-| **🎛️ MODS on/off** | listado de los 184 mods del server con check para activar/desactivar + reglas de carga (ver [MODS on/off](#mods-onoff-boton-del-bot)) |
+| **🎛️ MODS on/off** | listado de los 186 mods del server con check para activar/desactivar + reglas de carga + descarga de dependencias (ver [MODS on/off](#mods-onoff-boton-del-bot)) |
 | **👥 Usuarios** | submenu con botones: listado -> usuario -> eliminar / cambiar rol |
 | **🗺️ Mapa** | los tres toggles de la tabla de arriba |
 | **Aplicar todas** | reinicia aplicando las updates de Steam |
