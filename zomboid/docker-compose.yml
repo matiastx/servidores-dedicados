@@ -12,7 +12,7 @@ services:
     # limits_memory/limits_cpus del panel (solo los usa para apps con
     # Dockerfile), asi que el limite va aca.
     # El VPS tiene 8 GB de RAM compartidos con Coolify e InsForge.
-    # 6g (no 5g): con los 55 mods del cliente (vehiculos KI5 + libs de ropa/UI)
+    # 6g (no 5g): con los 56 mods del cliente (vehiculos KI5 + libs de ropa/UI)
     # el server necesita ~4 GB de heap + ~1 GB nativo. Con 5g el cgroup lo mataba.
     mem_limit: 6g
     cpus: 3
@@ -44,14 +44,16 @@ services:
       # no reenvia el puerto, pero no hay que depender de eso.
       - "127.0.0.1:27015:27015/tcp"
     environment:
-      # Cuenta admin del server (obligatoria ADMINPASSWORD en el primer arranque).
+      # Cuenta admin del server.
       ADMINUSERNAME: ${ADMINUSERNAME}
-      # ADMINPASSWORD: OMITIDA a proposito. Solo hace falta para crear el mundo
-      # por primera vez; el entrypoint la pasa como argumento del server y
-      # queda en claro en los logs. El mundo ya esta creado, asi que la cuenta
-      # admin conserva su clave inicial. Si se borra el mundo (ver README),
-      # hay que volver a declararla aqui y setearla en Coolify.
-      # ADMINPASSWORD: ${ADMINPASSWORD}
+      # ADMINPASSWORD: OBLIGATORIA solo en el PRIMER arranque (el que crea el
+      # mundo). El entrypoint la pasa como argumento del server, asi que queda
+      # en claro en los logs del contenedor. En produccion la variable NO esta
+      # definida en el .env ni en Coolify: compose avisa "variable is not set"
+      # (ruido inofensivo) y el server arranca igual porque el mundo ya existe.
+      # Para recrear el mundo desde cero hay que setearla en Coolify, arrancar
+      # UNA vez y volver a borrarla (ver README > Recrear el mundo).
+      ADMINPASSWORD: ${ADMINPASSWORD}
       # Nombre del server: SIN espacios ni caracteres especiales. Cambiarlo crea
       # un mundo nuevo (no se pierde el anterior, queda en otra carpeta).
       SERVERNAME: ${SERVERNAME}
@@ -76,7 +78,11 @@ services:
       WORKSHOP_IDS: ${WORKSHOP_IDS}
       # IDs de mods locales separados por punto y coma. Vacio = limpia la lista.
       MOD_IDS: ${MOD_IDS}
-      # 1 = deja intactos Mods/WorkshopItems del INI (gestion manual externa).
+      # False = el compose es la fuente de verdad: el entrypoint escribe
+      # Mods= y WorkshopItems= en el INI en cada arranque (a partir de
+      # MOD_IDS / WORKSHOP_IDS). True = deja intactos esos campos y la
+      # gestion queda por fuera. OJO: con True, el INI se edita a mano y
+      # cualquier redeploy puede dejarlo desincronizado con el compose.
       SELF_MANAGED_MODS: ${SELF_MANAGED_MODS}
       # Seguridad y red
       STEAMVAC: ${STEAMVAC}

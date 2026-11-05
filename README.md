@@ -58,7 +58,9 @@ así que hay que hacer **port forwarding en el router** hacia `192.168.68.222`:
 - **TCP 16262-16272** son el rango de slots (8 configurados, `MaxPlayers=8`).
   Se mantienen abiertos por requerimiento y por compatibilidad.
 - **UDP 8766/8767** los usa el cliente de Steam (legacy).
-- **TCP 27015** (RCON) queda solo en LAN/Tailscale: **no** hacer port forwarding.
+- **TCP 27015** (RCON) esta publicado **solo en loopback** (`127.0.0.1:27015`),
+  para el bot que corre en el host: **no** hacer port forwarding ni publicarlo
+  en la LAN.
 
 Cloudflare no proxea UDP de juegos: la conexión va por IP directa.
 Dentro de la LAN/Tailscale el server también es accesible en `192.168.68.222:16261`
