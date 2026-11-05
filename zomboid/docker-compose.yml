@@ -78,11 +78,16 @@ services:
       WORKSHOP_IDS: ${WORKSHOP_IDS}
       # IDs de mods locales separados por punto y coma. Vacio = limpia la lista.
       MOD_IDS: ${MOD_IDS}
+      # True = deja intactos Mods= y WorkshopItems= y la gestion queda por
+      # fuera (la hace el bot: boton "MODS = Cliente"). Es lo que esta seteado
+      # en Coolify desde el 2026-11-05: el INI del server manda y el bot
+      # escribe ahi, en vez de depender de la API de Coolify para cada cambio.
       # False = el compose es la fuente de verdad: el entrypoint escribe
       # Mods= y WorkshopItems= en el INI en cada arranque (a partir de
-      # MOD_IDS / WORKSHOP_IDS). True = deja intactos esos campos y la
-      # gestion queda por fuera. OJO: con True, el INI se edita a mano y
+      # MOD_IDS / WORKSHOP_IDS). OJO: con False, el INI se edita a mano y
       # cualquier redeploy puede dejarlo desincronizado con el compose.
+      # MOD_IDS / WORKSHOP_IDS se mantienen alineados con el INI igual, para
+      # que las dos fuentes nunca diverjan.
       SELF_MANAGED_MODS: ${SELF_MANAGED_MODS}
       # Seguridad y red
       STEAMVAC: ${STEAMVAC}

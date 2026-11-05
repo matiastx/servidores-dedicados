@@ -5,15 +5,19 @@ Runbook operativo del server dedicado. Imagen:
 (tag `42.21-release-2`).
 
 > **Estado**: recreado desde cero el **2026-11-04**. Mundo nuevo, INI nuevo,
-> SandboxVars nuevas y DB de usuarios nueva. Se conservaron los **137 items de
-> Workshop** (identicos a los del cliente) y se restauró la whitelist.
+> SandboxVars nuevas y DB de usuarios nueva. Se conservaron los items de
+> Workshop (hoy **138**, identicos a los del cliente) y se restauró la whitelist.
+>
+> **2026-11-05**: `SELF_MANAGED_MODS=True` (el INI manda, lo gestiona el bot) y
+> nuevo boton **🧩 MODS = Cliente** que deja el server identico al cliente.
 
 ## Resumen del estado actual
 
 | Que | Valor | Donde vive |
 |---|---|---|
-| Mods cargados | **56** (los mismos que carga el cliente) | `MOD_IDS` en Coolify |
-| Items de Workshop | **137** | `WORKSHOP_IDS` en Coolify |
+| Mods cargados | **56** (los mismos que carga el cliente) | `Mods=` en el INI |
+| Items de Workshop | **138** | `WorkshopItems=` en el INI |
+| Referencia del cliente | union 56 mods / 138 items | `/opt/backups/zomboid-client-*` |
 | Preset de partida | `Apocalypse` | `SERVERPRESET` |
 | Mapa | `Muldraugh, KY` | `Map=` en el INI |
 | MaxPlayers | `8` | `MaxPlayers=` en el INI |
@@ -101,9 +105,26 @@ orden como orden de carga.
 
 ### Donde se editan
 
+Desde el 2026-11-05 la verdad vive en **el INI del server**, no en el compose:
+
+| Variable | Valor | Que hace |
+|---|---|---|
+| `SELF_MANAGED_MODS` | `True` | el entrypoint **no** toca `Mods=` / `WorkshopItems=`; quedan bajo control del bot |
+| `MOD_IDS` | 56 ids, 894 chars | se mantiene **alineado** con el INI (el bot lo actualiza junto con el INI) |
+| `WORKSHOP_IDS` | 138 ids, 1518 chars | idem |
+
+> **Por que `True`.** Con `False` el entrypoint reescribe `Mods=` y
+> `WorkshopItems=` en cada arranque a partir del env, asi que cualquier cambio
+> escrito a mano en el INI se pierde al reiniciar y el bot depende de la API de
+> Coolify para poder aplicar un cambio. Con `True` el INI manda y el bot puede
+> aplicar los cambios reiniciando el contenedor (90 s) sin depender de la API.
+> El bot sigue actualizando `MOD_IDS` / `WORKSHOP_IDS` en Coolify, asi que las
+> dos fuentes nunca divergen y volver a `False` es seguro.
+
 Las variables viven **cifradas en la DB de Coolify** (`environment_variables.value`
 tiene cast `encrypted`), duplicadas por fila (buildtime + runtime). Se editan
-desde el panel de Coolify; para tocar la DB a mano:
+desde el panel de Coolify o con la API (`PATCH /applications/{uuid}/envs`,
+matchea por `key`); para tocar la DB a mano:
 
 ```bash
 # dentro del contenedor de Coolify, con bootstrap de Laravel (NO tinker inline:
@@ -111,12 +132,54 @@ desde el panel de Coolify; para tocar la DB a mano:
 php /tmp/coolify-update.php
 ```
 
-Referencia de los valores actuales:
+### MODS = Cliente (botón del bot)
 
-- `MOD_IDS`: 56 ids, 894 chars.
-- `WORKSHOP_IDS`: 137 ids, 1506 chars.
-- `SELF_MANAGED_MODS=False` -> el compose es la fuente de verdad y el
-  entrypoint reescribe `Mods=` / `WorkshopItems=` en cada arranque.
+El botón **🧩 MODS = Cliente** del bot deja el server **idéntico** al cliente.
+El cliente es la fuente de verdad y su referencia vive en el VPS, subida desde
+la PC:
+
+| Archivo en el VPS | Que es |
+|---|---|
+| `/opt/backups/zomboid-client-mods.txt` | **union** de los mods que carga el cliente, en orden de carga |
+| `/opt/backups/zomboid-client-mods-f0.txt` | **capa 1**: mods locales del cliente (`f:0`) |
+| `/opt/backups/zomboid-client-mods-st0.txt` | **capa 2**: mods que manda el server (`f:0 st:0`) |
+| `/opt/backups/zomboid-client-ids.txt` | ids de Workshop descargados en el cliente |
+| `/opt/backups/zomboid-client-ref.json` | metadata (fecha, conteos) |
+
+La referencia se genera con `G:\Proyectos\InsForge\tools\ops-client-export.ps1`
+(lee `C:\Users\matia\Zomboid\console.txt` y el workshop local, y sube todo al
+VPS). **Hay que correrla despues de jugar/conectar**, porque el log del juego es
+la unica fuente que dice que mods cargo el cliente y en que orden.
+
+Que hace el bot al sincronizar:
+
+1. Compara `Mods=` / `WorkshopItems=` del server contra la referencia y arma el
+   plan (agregar/quitar mods, agregar/quitar items, ajustar el orden).
+2. Pide **confirmacion** (expira a los 5 min) y avisa si hay jugadores.
+3. Detiene el server, escribe `Mods=` y `WorkshopItems=` en el INI y borra del
+   workshop las carpetas que no tiene el cliente.
+4. **Conserva el orden actual** del server para los mods que ya tiene y
+   **inserta los mods nuevos** en la posicion que les da el cliente. Si el
+   cliente impose otro orden, se adopta el del cliente.
+5. Recrea los symlinks case-insensitive y las carpetas `AnimSets` /
+   `actiongroups` (AdvancedAnimator las exige).
+6. Actualiza `MOD_IDS` / `WORKSHOP_IDS` en Coolify para que no divergan.
+7. Encende el server y **espera a que el juego baje los items nuevos** del
+   Workshop; recien ahi repara el layout de esos items.
+8. Verifica que el server cargo los mismos mods que el cliente. Si falta alguno,
+   reinicia una vez mas.
+
+El bot va reportando el **avance en %** en el mismo mensaje de Telegram
+(barra de progreso, ~1 actualizacion cada 4 s).
+
+> El bot **no** copia el ACF del cliente al server: ese archivo es el estado
+> de Steam del workshop y copiarlo haria que el server creyera que ya tiene
+> los items descargados.
+
+Verificado el 2026-11-05 con el caso real: el cliente tenia **138** items de
+Workshop y el server **137** (faltaba `3832274571` = FloorAttackHighlightFix).
+El bot agrego el item, espero la descarga, reparo el layout y quedo
+`IDENTICO: True` con 56/56 mods cargados.
 
 ### Los 56 mods
 
@@ -239,6 +302,10 @@ El bot gestiona la whitelist **por RCON** (`/pz alta`, `/pz borrar`, `/pz rol`),
 que es seguro con el server corriendo. Para restaurar hashes a mano hay que
 apagar el server (el juego tiene la SQLite abierta).
 
+Con el bot todo se hace a botones: **Usuarios** -> usuario -> **🔑 Cambiar
+rol** (un boton por rol) o **🗑️ Eliminar usuario**. El rol `banned` ademas
+expulsa al jugador si esta conectado.
+
 ## RCON
 
 El RCON escucha en `27015` y esta publicado **solo en loopback**:
@@ -279,25 +346,43 @@ Coolify mantiene **dos** copias del compose en la DB:
 
 ### Redeploy manual
 
-El bot tiene un boton **Redeploy** que usa la API de Coolify. **Hoy esta roto**
-por un token vencido (la API responde `401`). Redeploy a mano:
+El bot tiene un boton **Redeploy** que usa la API de Coolify. El token se
+regenero el 2026-11-05 y quedo funcionando (la API publica responde 403 de
+Cloudflare desde el VPS, asi que el bot cae al endpoint local
+`http://127.0.0.1:8000/api/v1`).
+
+El token vive en `/opt/backups/coolify.env` (root-only) y **no** es el mismo que
+el de `InsForge\.env.local` (ese da 401). Redeploy a mano:
 
 ```bash
 cd /data/coolify/applications/cggpgaytrcmy8kimlw4tn45l
 sudo docker compose up -d
 ```
 
-> Regenerar el token de la API de Coolify y actualizarlo en el bot.
-
 ## Bot de Telegram
 
-`insforge-backup-bot.service`. Menu `/pz`:
+`insforge-backup-bot.service`. Menu `/pz` (botones, una fila por fila):
 
-- **Usuarios**: listado, alta, baja, cambio de rol.
-- **Mapa**: los tres toggles de la tabla de arriba.
+| Boton | Que hace |
+|---|---|
+| **Estado** | estado del server |
+| **Buscar updates** | items de Workshop desactualizados |
+| **🧩 MODS = Cliente** | deja el server identico al cliente (ver [MODS = Cliente](#mods--cliente-boton-del-bot)) |
+| **👥 Usuarios** | submenu con botones: listado -> usuario -> eliminar / cambiar rol |
+| **Aplicar todas** | reinicia aplicando las updates de Steam |
+| **Reiniciar** / **Apagar** / **Encender** | control del contenedor |
+| **Redeploy** | redeploy via la API de Coolify |
+| **Log** | ultimas lineas del server |
+| **Mapa** | los tres toggles de la tabla de arriba |
 
-Las operaciones que cambian el estado (alta/baja/rol, toggles que reinician)
-piden **confirmacion con boton**, y la confirmacion **expira a los 5 minutos**
+El submenu de **Usuarios** es a botones: se muestra el listado (un boton por
+usuario), al tocar uno aparecen **🔑 Cambiar rol** (un boton por rol) y
+**🗑️ Eliminar usuario**, y al confirmar se ejecuta por RCON. Los comandos
+`/pz alta`, `/pz borrar` y `/pz rol` siguen funcionando.
+
+Las operaciones que cambian el estado (alta/baja/rol, sincronizacion de mods,
+toggles que reinician) piden **confirmacion con boton**, y la confirmacion
+**expira a los 5 minutos**
 (`PZ_CONFIRMAR[accion] = time.time() + 300`).
 
 El watcher y el bot avisan por Telegram cuando hay updates de Workshop y
