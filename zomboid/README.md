@@ -17,6 +17,8 @@ Runbook operativo del server dedicado. Imagen:
 |---|---|---|
 | Mods cargados | **56** (los mismos que carga el cliente) | `Mods=` en el INI |
 | Items de Workshop | **138** | `WorkshopItems=` en el INI |
+| Mods disponibles (activables a mano) | **184** en el workshop del server | catalogo del bot |
+| Overrides de mods (on/off manual) | ninguno por defecto | `/opt/backups/zomboid-mods-override.json` |
 | Referencia del cliente | union 56 mods / 138 items | `/opt/backups/zomboid-client-*` |
 | Preset de partida | `Apocalypse` | `SERVERPRESET` |
 | Mapa | `Muldraugh, KY` | `Map=` en el INI |
@@ -180,6 +182,69 @@ Verificado el 2026-11-05 con el caso real: el cliente tenia **138** items de
 Workshop y el server **137** (faltaba `3832274571` = FloorAttackHighlightFix).
 El bot agrego el item, espero la descarga, reparo el layout y quedo
 `IDENTICO: True` con 56/56 mods cargados.
+
+### MODS on/off (botón del bot)
+
+El botón **🎛️ MODS on/off** lista **los 184 mods que hay en el workshop del
+server** con un check al lado, para activarlos o desactivarlos a gusto.
+
+| Boton | Que hace |
+|---|---|
+| `pz_mods_panel` | abre el listado (paginado, 8 mods por pagina = 23 paginas) |
+| `pz_mods_p:<n>` | cambia de pagina |
+| `pz_tog:<hash>:<pag>` | activa/desactiva un mod (hash = sha1 del id, 10 hex) |
+| `pz_mods_apply` | pide confirmacion para aplicar (expira a los 5 min) |
+| `pz_ok_mods_apply` | aplica los cambios (stop -> INI -> start -> verificar) |
+| `pz_mods_reset` | borra los overrides y vuelve a la base del cliente |
+
+El check muestra el estado **configurado**; un `🔄` marca los mods cuyo estado
+difiere del que tiene el server ahora (cambio pendiente de aplicar).
+
+**Como se guardan los cambios.** Cargar mods exige reiniciar el server, asi que
+el bot **no** toca el INI al vuelo: guarda un override por mod en
+
+```
+/opt/backups/zomboid-mods-override.json     {"<mod_id>": "on" | "off"}
+```
+
+Relativo a la **base** (la referencia del cliente):
+
+```
+set efectivo = (base UNION "on") - "off"
+```
+
+- El override se **borra** solo cuando el estado pedido coincide con el de la
+  base (asi el JSON queda lo mas chico posible).
+- El boton **Aplicar** reescribe `Mods=` / `WorkshopItems=` y reinicia.
+  `WorkshopItems=` conserva **todos** los items: desactivar un mod no
+  desinstala su contenido, asi que volverlo a activar es instantaneo.
+- El boton **Volver a la base** borra los overrides (no reinicia nada).
+- El sync **🧩 MODS = Cliente** respeta los overrides: el target es el set
+  efectivo, no la base pelada.
+
+**Orden de carga.** Se conserva el orden actual del server; los mods apagados
+desaparecen y los activados a mano van al final (o justo despues de su
+dependencia activa). Si el cliente impone otro orden, se adopta el de la
+**capa 2** (`f:0 st:0`) — la *union* arranca por la capa local, asi que usar sus
+posiciones pondria los mods en otro lugar.
+
+**Dependencias.** El bot escanea el `mod.info` de cada mod del workshop (el de
+la subcarpeta de version, que es el que carga B42) y avisa:
+
+- al **activar** un mod, que requisitos suyos no van a estar activos;
+- al **desactivar** un mod, cuantos mods activos dependen de el.
+
+> `damnlib` es requisito de **93** mods de vehiculos y **no esta en el
+> workshop**: activarlos sin el no va a funcionar. El bot lo avisa.
+
+**Catalogo.** Se arma escaneando
+`<volumen workshop>/content/108600/<item>/mods/<mod>/**/mod.info`. En el server
+hay **138 items** y **184 mods unicos** (todos los 56 del `Mods=` estan
+incluidos). El escaneo tarda ~0.1 s y se cachea 5 min.
+
+Verificado el 2026-11-05 end-to-end en el VPS: se desactivo `87cruiser`, se
+aplico (el server reinicio y cargo **55/55** mods), se reseteo y se volvio a
+aplicar (**56/56**). El orden del `Mods=` quedo identico a la capa 2.
 
 ### Los 56 mods
 
@@ -368,17 +433,23 @@ sudo docker compose up -d
 | **Estado** | estado del server |
 | **Buscar updates** | items de Workshop desactualizados |
 | **🧩 MODS = Cliente** | deja el server identico al cliente (ver [MODS = Cliente](#mods--cliente-boton-del-bot)) |
+| **🎛️ MODS on/off** | listado de los 184 mods del server con check para activar/desactivar (ver [MODS on/off](#mods-onoff-boton-del-bot)) |
 | **👥 Usuarios** | submenu con botones: listado -> usuario -> eliminar / cambiar rol |
+| **🗺️ Mapa** | los tres toggles de la tabla de arriba |
 | **Aplicar todas** | reinicia aplicando las updates de Steam |
 | **Reiniciar** / **Apagar** / **Encender** | control del contenedor |
 | **Redeploy** | redeploy via la API de Coolify |
 | **Log** | ultimas lineas del server |
-| **Mapa** | los tres toggles de la tabla de arriba |
 
 El submenu de **Usuarios** es a botones: se muestra el listado (un boton por
 usuario), al tocar uno aparecen **🔑 Cambiar rol** (un boton por rol) y
 **🗑️ Eliminar usuario**, y al confirmar se ejecuta por RCON. Los comandos
 `/pz alta`, `/pz borrar` y `/pz rol` siguen funcionando.
+
+El submenu de **MODS on/off** es a botones tambien: pagina de 8 mods con
+`✅`/`❌`, tocá uno para alternarlo, y despues **✅ Aplicar cambios** (reinicia)
+o **↩️ Volver a la base** (descarta los overrides). El comando `/pz mods on/off`
+abre el mismo listado.
 
 Las operaciones que cambian el estado (alta/baja/rol, sincronizacion de mods,
 toggles que reinician) piden **confirmacion con boton**, y la confirmacion
