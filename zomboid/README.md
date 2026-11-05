@@ -326,7 +326,7 @@ contenido(mod) = <mod>/common/**
 | Metrica | Valor |
 |---|---|
 | Incompatibles activos (pares unicos) | **41** (56 pares dirigidos) |
-| Pack `Seasons` con 5 variants activos | **1** (deberia haber 1) |
+| Pack `Seasons` con 5 variants activos | **1 grupo** (solo 1 de las 5 variants debería estar activo) |
 | Violaciones de `require` / `loadmodafter` | **0** |
 | Pares que se pisan archivos | **103** (ganador vs perdedor) · **240** (todos vs todos) |
 | Paths en choque | **355** |
