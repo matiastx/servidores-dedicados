@@ -22,6 +22,12 @@ Runbook operativo del server dedicado. Imagen:
 > ofrece bajarlo del Workshop y activarlo. El contador de requires se separo
 > en "entre los activos" y "no activables todavia".
 > Ver [Auto-descarga de dependencias faltantes](#auto-descarga-de-dependencias-faltantes).
+>
+> **2026-11-06**: **🎨 Texturas del cuerpo**: nueva seccion en 🎛️ MODS para
+> elegir **una sola** variante de la textura de Tomb's Player Body (ON / DOLL /
+> NUDE). Las otras dos se desactivan y se avisa que mods pisan los mismos
+> archivos (con un boton para apagarlos tambien).
+> Ver [Texturas del cuerpo](#texturas-del-cuerpo-tombs-player-body).
 
 ## Resumen del estado actual
 
@@ -32,6 +38,7 @@ Runbook operativo del server dedicado. Imagen:
 | Mods disponibles (activables a mano) | **186** en el workshop del server | catalogo del bot |
 | Overrides de mods (on/off manual) | `damnlib` en `on` (el resto segun se use el bot) | `/opt/backups/zomboid-mods-override.json` |
 | Reglas internas de orden de carga | activas (resumen en el panel del bot) | `zomboid_control.py` |
+| Texturas del cuerpo | 3 variantes (ON / DOLL / NUDE): se deja una sola activa | boton 🎨 en 🎛️ MODS |
 | Referencia del cliente | union 56 mods / 138 items | `/opt/backups/zomboid-client-*` |
 | Preset de partida | `Apocalypse` | `SERVERPRESET` |
 | Mapa | `Muldraugh, KY` | `Map=` en el INI |
@@ -433,6 +440,48 @@ paso de 95 a 2 no activables.
 
 > Los jugadores tienen que tener el item descargado en su cliente de Steam para
 > ver el mismo contenido que el server.
+
+### Texturas del cuerpo (Tomb's Player Body)
+
+`Tomb's Player Body` (item `3429790870`) trae **3 variantes** de la textura
+del cuerpo, y los autores las declaran **incompatibles entre si**
+(`incompatible=` en el `mod.info` de la carpeta `42.0`):
+
+| Variante | Mod id | Etiqueta |
+|---|---|---|
+| original | `TombBodyTex` | ON |
+| doll | `TombBodyTexDOLL` | DOLL |
+| nude | `TombBodyTexNUDE` | NUDE |
+
+En el server estaban las **3 activas a la vez**. El juego **no** las bloquea
+(`incompatible=` no genera ningun error en el log): lo que pasa es que **gana
+la ultima del orden de carga** (el log muestra `mod "TombBodyTexNUDE"
+overrides media/textures/body/femalebody01.png`). O sea: se veía **NUDE** sin
+querer.
+
+Ademas, **4 mods mas pisan exactamente los mismos archivos** de la textura del
+cuerpo, y **6 mods declaran `incompatible=`** con la textura elegida (los
+autores no los quieren juntos): los 5 `SPNRetexture*` y `SPNCCFaces`.
+
+**El bot.** En 🎛️ MODS esta el boton **🎨 Texturas del cuerpo**:
+
+1. El boton abre la pantalla con las 3 variantes (ON / DOLL / NUDE) y marca
+   cual esta activa y **cual gana** (la que se ve ahora).
+2. Al elegir una, sale la pantalla de confirmacion con el cambio exacto:
+   que queda activa, que se desactiva, **que mods pisan los mismos archivos**
+   y cuales declaran incompatibilidad. Ahi esta:
+   - **✅ Sí, aplicar** -> deja esa variante activa y desactiva las otras 2;
+   - **🛑 Apagar los que pisan y aplicar** -> lo mismo, pero ademas desactiva
+     los mods que pisan los mismos archivos.
+
+La confirmacion expira a los 5 minutos. **No se borra ni se desinstala nada**:
+solo cambia la configuracion (`Mods=`), y se aplica con **Aplicar cambios**
+(que reinicia el server). La base del cuerpo y del customiser
+(`SPNCC`, `SPNCCDetails`, `SPNCCDetailsHD`, `TombBody`, `TombBodyCompat`,
+`TombBodyCustom`) **nunca se toca**, aunque compartan archivos.
+
+> Los mods que pisan **no se apagan solos**: solo se avisa. Si querés que no
+> tapen la textura, usá el boton que los apaga tambien.
 
 ### Los 56 mods
 
