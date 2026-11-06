@@ -459,17 +459,30 @@ la ultima del orden de carga** (el log muestra `mod "TombBodyTexNUDE"
 overrides media/textures/body/femalebody01.png`). O sea: se veía **NUDE** sin
 querer.
 
-Ademas, **4 mods mas pisan exactamente los mismos archivos** de la textura del
-cuerpo, y **6 mods declaran `incompatible=`** con la textura elegida (los
-autores no los quieren juntos): los 5 `SPNRetexture*` y `SPNCCFaces`.
+Ademas, **4 mods mas comparten los archivos** de la textura del cuerpo, y **6
+mods declaran `incompatible=`** con la textura elegida (los autores no los
+quieren juntos): los 5 `SPNRetexture*` y `SPNCCFaces`.
+
+Compartir no es lo mismo que tapar: el juego gana con el **ultimo** del orden
+de carga, asi que el bot separa los dos casos:
+
+| Mod | Archivos | Efecto |
+|---|---|---|
+| `DetailedPlayerTextureFemaleB42` | 15 | **pisa** la textura (carga despues: la tapa) |
+| `SPNRetexture` | 19 | comparte (carga antes: la textura le gana) |
+| `SPNRetextureCustom` | 20 | comparte (carga antes: la textura le gana) |
+| `SPNRetextureUnderwear` | 19 | comparte (carga antes: la textura le gana) |
+
+O sea: **solo 1 mod tapa de verdad** la textura del cuerpo.
 
 **El bot.** En 🎛️ MODS esta el boton **🎨 Texturas del cuerpo**:
 
 1. El boton abre la pantalla con las 3 variantes (ON / DOLL / NUDE) y marca
-   cual esta activa y **cual gana** (la que se ve ahora).
+   cual esta activa y **cual gana** (la que se ve ahora). Las variantes que no
+   estan en el Workshop del server se listan pero **sin boton**.
 2. Al elegir una, sale la pantalla de confirmacion con el cambio exacto:
-   que queda activa, que se desactiva, **que mods pisan los mismos archivos**
-   y cuales declaran incompatibilidad. Ahi esta:
+   que queda activa, que se desactiva, **que mods pisan los mismos archivos**,
+   **que mods solo los comparten** y cuales declaran incompatibilidad. Ahi esta:
    - **✅ Sí, aplicar** -> deja esa variante activa y desactiva las otras 2;
    - **🛑 Apagar los que pisan y aplicar** -> lo mismo, pero ademas desactiva
      los mods que pisan los mismos archivos.
