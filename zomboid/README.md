@@ -21,13 +21,24 @@ Runbook operativo del server dedicado. Imagen:
 > mod pide con `require=` algo que no esta en el workshop del server, el bot
 > ofrece bajarlo del Workshop y activarlo. El contador de requires se separo
 > en "entre los activos" y "no activables todavia".
-> Ver [Auto-descarga de dependencias faltantes](#auto-descarga-de-dependencias-faltantes).
+> Ver [Dependencias faltantes (botón ⬆️ Instalar dependencias)](#dependencias-faltantes-botón-⬆️-instalar-dependencias).
 >
 > **2026-11-06**: **🎨 Texturas del cuerpo**: nueva seccion en 🎛️ MODS para
 > elegir **una sola** variante de la textura de Tomb's Player Body (ON / DOLL /
 > NUDE). Las otras dos se desactivan y se avisa que mods pisan los mismos
 > archivos (con un boton para apagarlos tambien).
 > Ver [Texturas del cuerpo](#texturas-del-cuerpo-tombs-player-body).
+>
+> **2026-11-06 (tarde)**: dos mejoras del boton 🎛️ MODS:
+>
+> - **⬆️ Instalar dependencias y activar**: cuando a un mod le falta un
+>   `require=`, el bot lo resuelve (**activa** la dependencia si ya esta en el
+>   server, o la deja para que la baje el juego) **sin reiniciar nada**: guarda
+>   la configuracion y vos tocas **Aplicar cambios**. El boton viejo que
+>   reiniciaba al instante dejo de ofrecerse.
+> - **Filtro por categorias**: el panel ahora tiene una fila de 7 filtros
+>   (Todos + Vehiculos / Apariencia / Mapa / Armas / Overhauls / Otros) para no
+>   recorrer 186 mods en 23 paginas.
 
 ## Resumen del estado actual
 
@@ -211,11 +222,17 @@ server** con un check al lado, para activarlos o desactivarlos a gusto.
 | Boton | Que hace |
 |---|---|
 | `pz_mods_panel` | abre el listado (paginado, 8 mods por pagina = 23 paginas) |
-| `pz_mods_p:<n>` | cambia de pagina |
-| `pz_tog:<hash>:<pag>` | activa/desactiva un mod (hash = sha1 del id, 10 hex) |
+| `pz_mods_cat:<clave>` | filtra el listado por categoria (vacio = todos) |
+| `pz_mods_p:<n>[:<cat>]` | cambia de pagina (dentro del filtro) |
+| `pz_tog:<hash>:<pag>[:<cat>]` | activa/desactiva un mod (hash = sha1 del id, 10 hex) |
 | `pz_mods_apply` | pide confirmacion para aplicar (expira a los 5 min) |
 | `pz_ok_mods_apply` | aplica los cambios (stop -> INI -> start -> verificar) |
 | `pz_mods_reset` | borra los overrides y vuelve a la base del cliente |
+
+Los callbacks **con `:cat`** son los nuevos: llevan el filtro para que no se
+pierda al paginar ni al activar un mod. Los parsers **toleran los formatos
+viejos** (`pz_mods_p:<n>`, `pz_tog:<hash>:<pag>`, `pz_ok_mods_tog:<hash>:<pag>`)
+porque hay mensajes viejos en la pantalla de los usuarios.
 
 Callbacks de las reglas internas (ver
 [Reglas internas de orden de carga de mods](#reglas-internas-de-orden-de-carga-de-mods)):
@@ -227,9 +244,11 @@ Callbacks de las reglas internas (ver
 | `pz_mods_fix_g:<clave>` | muestra las variantes de un grupo |
 | `pz_mods_keep:<clave>:<hash>` | elige que variante conservar |
 | `pz_ok_mods_fix:<clave>:<hash>` | confirma el arreglo (expira a los 5 min) |
-| `pz_ok_mods_tog:<hash>:<pag>` | "⚠️ Activar igual" (2º paso, expira a los 5 min) |
-| `pz_mods_dep:<hash_dep>:<hash_mod>` | confirma la descarga de una dependencia faltante |
-| `pz_ok_mods_dep:<hash_dep>:<hash_mod>` | descarga la dependencia y activa el mod (expira a los 5 min) |
+| `pz_ok_mods_tog:<hash>:<pag>[:<cat>]` | "⚠️ Activar igual" (2º paso, expira a los 5 min) |
+| `pz_mods_deps:<hash_mod>` | pide instalar las dependencias faltantes del mod |
+| `pz_ok_mods_deps:<hash_mod>` | las instala y activa el mod (expira a los 5 min) |
+| `pz_mods_dep:<hash_dep>:<hash_mod>` | **retirado**: confirmaba la descarga de una dependencia (reiniciaba al instante) |
+| `pz_ok_mods_dep:<hash_dep>:<hash_mod>` | **retirado**: idem (el callback sigue vivo por mensajes viejos) |
 
 La `clave` del grupo es `sha1(miembros ordenados)[:8]`: es **estable** entre
 reinicios, asi que el mismo grupo siempre tiene el mismo boton.
@@ -279,10 +298,10 @@ la subcarpeta de version, que es el que carga B42) y avisa:
 - al **activar** un mod, que requisitos suyos no van a estar activos;
 - al **desactivar** un mod, cuantos mods activos dependen de el.
 
-> `damnlib` ("that DAMN Library") es requisito de **93** mods de vehiculos KI5
-> y **no estaba en el workshop** del server. Con el bot ahora se puede
-> **descargar solo** (ver
-> [Auto-descarga de dependencias faltantes](#auto-descarga-de-dependencias-faltantes)).
+> `damnlib` ("that DAMN Library") es requisito de **93** mods de vehiculos KI5.
+> Ya esta **descargada** en el server pero **no activa**: con el boton
+> **⬆️ Instalar dependencias y activar** se activa en un toque (ver
+> [Dependencias faltantes (botón ⬆️ Instalar dependencias)](#dependencias-faltantes-botón-⬆️-instalar-dependencias)).
 
 **Catalogo.** Se arma escaneando
 `<volumen workshop>/content/108600/<item>/mods/<mod>/**/mod.info`. En el server
@@ -379,7 +398,7 @@ variantes activas) y el grupo de texturas del cuerpo (`SPNRetexture*` /
 `TombBody*` / `SPNCC*`). La propuesta por defecto para Seasons es
 `Project_Seasons_B42`.
 
-### Auto-descarga de dependencias faltantes
+### Dependencias faltantes (botón ⬆️ Instalar dependencias)
 
 Algunos mods piden con `require=` un mod que **no esta en el workshop del
 server**. El catalogo del server solo conoce los items **ya bajados** (escanéa
@@ -405,15 +424,28 @@ cosas:
 - `Mods=<mod_id>` -> el mod **carga**. El `require` se chequea contra los mods
   **cargados**, no contra los descargados.
 
-**El flujo en el bot** (2 pasos):
+**El flujo en el bot** (2 pasos, **sin reiniciar**):
 
 1. Tocás un mod que necesita una dependencia -> la pantalla bloqueada ofrece
-   **⬇️ Descargar y activar «mod»** (`pz_mods_dep:<hash>:<hash>`), con el item
-   de Workshop y la nota de la dependencia.
-2. Confirmacion (expira a los 5 min) -> `pz_ok_mods_dep:<hash>:<hash>` ->
-   agrega el override `on` de la dependencia + activa el mod -> se aplica:
-   escribe el INI, actualiza el env de Coolify, reinicia, **espera la
-   descarga** (timeout 300 s), repara el layout y verifica.
+   **⬆️ Instalar dependencias y activar «mod»** (`pz_mods_deps:<hash>`), que
+   lista cada dependencia y que va a pasar con ella.
+2. Confirmacion (expira a los 5 min) -> `pz_ok_mods_deps:<hash>` -> escribe
+   los overrides `on` de la dependencia **y** del mod y **no toca el server**:
+   vuelve al panel con el aviso de tocar **Aplicar cambios**. El item nuevo lo
+   baja el juego al arrancar (despues de "Aplicar cambios"), no el bot.
+
+Las dependencias se clasifican en tres grupos:
+
+| Clase | Que significa | Que hace el bot |
+|---|---|---|
+| **activable** | ya esta en el workshop del server: alcanza con activarla | override `on` |
+| **descargable** | no esta, pero se conoce su item de Workshop | override `on`; el juego baja el item al aplicar |
+| **imposible** | no esta y no se conoce su item | solo avisa: no hay nada que instalar |
+
+> El boton viejo **⬇️ Descargar y activar** (que reiniciaba el server al
+> instante) **dejo de ofrecerse** en la pantalla de bloqueo: lo reemplaza el
+> nuevo. Sus callbacks (`pz_mods_dep:` / `pz_ok_mods_dep:`) **siguen vivos**
+> por si hay un mensaje viejo en pantalla.
 
 **El contador de requires.** Antes contaba los requires inexistentes de **todo
 el catalogo** (decia 3 cuando para los mods **activos** eran 0). Ahora se
@@ -424,7 +456,12 @@ separan los dos alcances y se muestran los dos numeros:
   dependencia (**2** hoy, las dos variantes de Boots Expanded).
 
 El panel 🎛️ MODS y la pantalla 🔎 Problemas muestran los dos numeros y, si
-corresponde, cuales se pueden bajar solas.
+corresponde, cuales se pueden instalar solas.
+
+> **Estado real del server (verificado 2026-11-06)**: `damnlib` **ya esta
+> descargada** (item `3171167894` en el volumen y en `WorkshopItems=`) pero
+> **no activa**: por eso los **122** mods que la piden salen bloqueados. Con el
+> boton nuevo se activa en un toque, sin reiniciar.
 
 **Probado end-to-end en el VPS** (2026-11-05, con 0 jugadores conectados):
 `damnlib` se bajo solo (138 -> **139 items**), quedo cargado en el `Mods=` y el
@@ -440,6 +477,33 @@ paso de 95 a 2 no activables.
 
 > Los jugadores tienen que tener el item descargado en su cliente de Steam para
 > ver el mismo contenido que el server.
+
+### Filtro por categorias (panel MODS)
+
+Con 186 mods la lista era larga (23 paginas). El panel 🎛️ MODS tiene ahora una
+**fila de filtros** arriba: 7 botones (📋 Todos + 6 grupos) en dos filas de 3
+y 4. El grupo activo se marca con ✅ y el panel dice
+**"📂 Mostrando: 🚗 Vehículos — 121 mods · página 1 de 16"**.
+
+Los 6 grupos reusan las 9 categorias internas del motor (`mod_categories`) y
+las agrupan:
+
+| Grupo | Emoji | Categorias internas | Mods (server) |
+|---|---|---|---|
+| Vehiculos | 🚗 | `vehiculo` | 121 |
+| Apariencia | 👕 | `item` | 9 |
+| Mapa y construccion | 🗺️ | `mapa` + `building` | 4 |
+| Armas | ⚔️ | `arma` | 1 |
+| Overhauls y librerias | 🔧 | `overhaul` + `framework` | 10 |
+| Otros | 📦 | `otros` + `ui` | 41 |
+
+> Los numeros cambian con el workshop del server (el catalogo se arma
+> escaneando el volumen). Los 6 grupos **reparten todos los mods**: ninguno
+> queda fuera.
+
+La categoria viaja en el callback (`pz_mods_p:<n>:<cat>`,
+`pz_tog:<hash>:<pag>:<cat>`), asi que el filtro se conserva al paginar, al
+activar/desactivar, al confirmar "Activar igual" y al instalar dependencias.
 
 ### Texturas del cuerpo (Tomb's Player Body)
 
