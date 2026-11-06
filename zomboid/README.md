@@ -47,6 +47,12 @@ Runbook operativo del server dedicado. Imagen:
 > `incompatible=`/`pack=` de las **dependencias**, y el callback legacy hacia
 > dos escrituras no atomicas. Ver
 > [Detalles que salta el motor al resolver dependencias](#detalles-que-salta-el-motor-al-resolver-dependencias).
+>
+> **2026-11-06 (noche, 2.º pase)**: otra revision encontro que la exclusividad
+> de las variantes se validaba sobre el id **pedido** (que puede ser un alias)
+> y no sobre el id **real**: se podian activar las dos variantes del mismo item
+> a la vez. Corregido con un helper unico de resolucion; la pantalla legacy
+> ahora dice los ids que de verdad se escriben en `Mods=`.
 
 ## Resumen del estado actual
 
@@ -515,7 +521,7 @@ activar/desactivar, al confirmar "Activar igual" y al instalar dependencias.
 
 ### Detalles que salta el motor al resolver dependencias
 
-Cuatro casos que el bot maneja solo (verificados con tests contra el
+Cinco casos que el bot maneja solo (verificados con tests contra el
 workshop real):
 
 | Caso | Qué hace |
@@ -524,11 +530,17 @@ workshop real):
 | `require=` con **ciclo** (A pide B y B pide A) | no se cuelga ni se autorefiere: el mod no aparece como dependencia de si mismo |
 | dependencia **incompatible** o del **mismo pack** que algo ya activo | el plan **aborta** con el motivo (no deja la carga rota) |
 | dos variantes **excluyentes** del mismo item | se rechaza aunque la dependencia ya este descargada y solo haya que activarla |
+| un alias cuya **variante real** es la excluyente de otra | se rechaza tambien: la exclusividad se hereda del id real, no del alias |
 
 > Las escrituras son **atomicas**: dependencia + mod se guardan en **una
 > sola** operacion. Si algo falla, no queda la dependencia activa sin el mod
 > (ni al reves). Esto aplica tambien al callback viejo
 > `pz_ok_mods_dep:` (que sigue vivo por mensajes viejos en pantalla).
+
+> La exclusividad se valida **siempre sobre los ids reales**, y antes de
+> comprobar si el mod existe en el catalogo: si el item no esta descargado en
+> el server, el motivo que se muestra es el correcto ("son excluyentes") y no
+> un "no conozco el mod" que taparia el problema de verdad.
 
 ### Texturas del cuerpo (Tomb's Player Body)
 
