@@ -39,6 +39,14 @@ Runbook operativo del server dedicado. Imagen:
 > - **Filtro por categorias**: el panel ahora tiene una fila de 7 filtros
 >   (Todos + Vehiculos / Apariencia / Mapa / Armas / Overhauls / Otros) para no
 >   recorrer 186 mods en 23 paginas.
+>
+> **2026-11-06 (noche)**: **parche post-revision**: una revision de codigo
+> encontro 4 bugs en las dos features de arriba, ya corregidos: se activaba el
+> id **alias** de B41 en vez del id real del item, la exclusividad no se
+> chequeaba cuando la dependencia ya estaba descargada, no se validaba
+> `incompatible=`/`pack=` de las **dependencias**, y el callback legacy hacia
+> dos escrituras no atomicas. Ver
+> [Detalles que salta el motor al resolver dependencias](#detalles-que-salta-el-motor-al-resolver-dependencias).
 
 ## Resumen del estado actual
 
@@ -504,6 +512,23 @@ las agrupan:
 La categoria viaja en el callback (`pz_mods_p:<n>:<cat>`,
 `pz_tog:<hash>:<pag>:<cat>`), asi que el filtro se conserva al paginar, al
 activar/desactivar, al confirmar "Activar igual" y al instalar dependencias.
+
+### Detalles que salta el motor al resolver dependencias
+
+Cuatro casos que el bot maneja solo (verificados con tests contra el
+workshop real):
+
+| Caso | Qué hace |
+|---|---|
+| `require=` con un **alias** (id que no existe en B42) | activa el id **real** del item del Workshop (ej. `SM4BootsExpanded` → `SM4BootsExpandedB42`) y la pantalla lo aclara |
+| `require=` con **ciclo** (A pide B y B pide A) | no se cuelga ni se autorefiere: el mod no aparece como dependencia de si mismo |
+| dependencia **incompatible** o del **mismo pack** que algo ya activo | el plan **aborta** con el motivo (no deja la carga rota) |
+| dos variantes **excluyentes** del mismo item | se rechaza aunque la dependencia ya este descargada y solo haya que activarla |
+
+> Las escrituras son **atomicas**: dependencia + mod se guardan en **una
+> sola** operacion. Si algo falla, no queda la dependencia activa sin el mod
+> (ni al reves). Esto aplica tambien al callback viejo
+> `pz_ok_mods_dep:` (que sigue vivo por mensajes viejos en pantalla).
 
 ### Texturas del cuerpo (Tomb's Player Body)
 
