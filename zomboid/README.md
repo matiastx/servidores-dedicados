@@ -964,21 +964,22 @@ Referencia de un arranque sano con los 56 mods (juego 42.21.0):
 | `AdvancedAnimator` | 0 |
 | `FileNotFoundException` / `NoSuchFileException` | 0 |
 | mods cargados | 56 (conjunto identico al cliente) |
-| `ERROR` | 56 (ruido conocido, ver abajo) |
-| `WARN` | ~1610 (ruido conocido) |
+| `ERROR` | ruido conocido (el conteo exacto depende del criterio; ver abajo) |
+| `WARN` | ruido conocido (modelos/UI) |
 
 ### El log cambio de formato en 42.22
 
 | Que | 42.21 | 42.22 |
 |---|---|---|
 | mods | `Loading: <mod>` | `LOG : Mod ... loading <mod_id>` |
-| errores | lineas que empiezan con `ERROR:` | `> ERROR:` **embebido** en la linea |
-| warnings | lineas que empiezan con `WARN:` | **no hay** lineas que empiecen con `WARN:` |
+| errores | `ERROR: General ...` | `ERROR: General ...` **y** `LOG : General ... > ERROR: ...` (embebido) |
+| warnings | `WARN: ...` | `WARN : ...` (con **espacio** antes de los dos puntos) |
 
-> Los greps por `^ERROR` / `^WARN` **no sirven** en 42.22: hay que contar
-> `ERROR` como **substring**.
+> **Los greps cambian**: `grep -c 'WARN:'` da **0** en 42.22 (ahora es
+> `WARN :`), y `grep -c '^ERROR'` **no** cuenta los errores embebidos
+> (`LOG : ... > ERROR:`). Hay que contar `ERROR` y `WARN` como **substring**.
 
-Arranque medido el **2026-11-09** (juego **42.22.2**, **173** mods):
+Arranque medido el **2026-11-09** (juego **42.22.2**, **173** mods, 8210 lineas):
 
 | Contador | Valor |
 |---|---|
@@ -988,8 +989,21 @@ Arranque medido el **2026-11-09** (juego **42.22.2**, **173** mods):
 | `AdvancedAnimator` | 0 |
 | `FileNotFoundException` / `NoSuchFileException` | 0 |
 | mods cargados | **173/173** (`faltan=[]`, `sobran=[]`) |
-| `ERROR` | 47 (ruido conocido: `template ... not found` de los vehiculos KI5) · 0 otros |
-| `WARN` | 0 |
+| `ERROR` (substring) | **626** = 528 `invalid room/building metaID ... map_meta.bin` + 42 `Missing ThumpSound` + 47 `template ... not found` (vehiculos KI5) + 2 `Sanitizing container name` + 7 otros |
+| `WARN` (substring) | **3971** (`WARN : Script ... checkMesh` 2316, `XuiSkin...Load` 928, `IsoSpriteManager.AddSprite` 498, ...) — ruido de modelos/UI |
+
+> **Ojo — el update subio los `metaID`**: en el arranque **anterior**
+> (2026-11-09 19:36, todavia 42.21.0) habia **5** lineas de `metaID`; en el de
+> 42.22.2 hay **528**. El mundo se creo con el `map_meta.bin` de 42.21 y 42.22
+> cambio el metadata del mapa: el juego no encuentra algunos metaIDs al leer
+> el mundo y salta esas celdas. El server **arranca bien** (0 `required mod
+> not found`, RCON escuchando, 173/173 mods, el mundo se sigue guardando), pero
+> queda como **baseline a vigilar**: si se ven celdas raras (interiores
+> vacios, objetos que no cargan), la causa probable es este metadata y el
+> camino seria recrear el mundo.
+>
+> Los `WARN` ya venian en el arranque anterior (3963 → 3971): no son del
+> update.
 
 ### Ruido de log conocido (NO es un fallo)
 
@@ -1000,6 +1014,12 @@ Arranque medido el **2026-11-09** (juego **42.22.2**, **173** mods):
 - `Missing ThumpSound`
 - `unknown option "-modfolders"`
 - `"ADMINPASSWORD" variable is not set` (compose)
+- `template "..." not found` (vehiculos KI5: el mod trae un template que el juego no tiene)
+- `invalid room/building metaID ... while reading map_meta.bin` (528 en el arranque de 42.22.2 — ver la nota del formato de log)
+- `WARN : Script ... checkMesh` / `XuiSkin$EntityUiStyle.Load` / `IsoSpriteManager.AddSprite` (modelos y UI)
+- `ImportedSkeleton.collectBoneFrames > Could not find bone index for node name: "Body"`
+- `CraftRecipeComponentScript: Recipe Piano missing UiConfigScript`
+- `Mannequin zone missing properties in media/maps/Muldraugh, KY/objects.lua`
 
 ## Backups
 
