@@ -2,8 +2,12 @@ services:
   # Project Zomboid dedicated server.
   # Imagen oficial: https://github.com/Danixu/project-zomboid-server-docker
   # Tag fijado a proposito: la imagen trae el juego horneado y el entrypoint NO
-  # actualiza el juego salvo FORCEUPDATE=true. Para actualizar hay que cambiar el
-  # tag y redeployar (ver README.md).
+  # actualiza el juego salvo FORCEUPDATE=true. Hay dos caminos para actualizar:
+  #   A) cambiar este tag y redeployar (cuando hay imagen oficial del tag), o
+  #   B) poner FORCEUPDATE=True en las env vars: el entrypoint corre SteamCMD
+  #      (+app_update 380870) y deja el server en la ultima version publica.
+  # Hoy (juego 42.22.2, 2026-11-09) esta en el camino B: no hay imagen oficial
+  # 42.22. Ver README.md > Actualizar la version del juego.
   zomboid:
     image: danixu86/project-zomboid-dedicated-server:42.21-release-2
     container_name: zomboid

@@ -69,5 +69,25 @@ y `100.75.207.93:16261`.
 ## Actualizar la versión del juego
 
 La imagen trae el juego horneado y el entrypoint **no** actualiza salvo
-`FORCEUPDATE=true`. Para mover la versión: cambiar el tag de `image:` en
-`zomboid/docker-compose.yml`, commit, y redeploy desde Coolify.
+`FORCEUPDATE=true`. Hay dos caminos:
+
+**A. Hay imagen oficial del tag (lo normal).** Cambiar el tag de `image:` en
+`zomboid/docker-compose.yml`, commit, y redeploy desde Coolify. El juego queda
+horneado en la imagen: no se re-descarga.
+
+**B. Todavía no hay imagen del tag (lo que pasó con 42.22).** Poner
+`FORCEUPDATE=True` en las env vars de Coolify y redeploy: el entrypoint corre
+SteamCMD (`+app_update 380870`, rama `public`) y deja el server en la última
+versión pública.
+
+> A fecha **2026-11-10** el último push de la imagen es del **2026-10-25**
+> (`latest` y `latest-release` apuntan al digest de `42.20.4-release-2`) y
+> **no hay tag `42.22`**: por eso el server quedó en 42.22.2 con el camino B.
+>
+> Con `FORCEUPDATE=True` **cada recreación del contenedor vuelve a descargar
+> el parche** (~2 GB): el juego actualizado vive en la **capa del contenedor**,
+> no en un volume. Cuando se publique la imagen oficial del tag, hay que volver
+> al camino A (cambiar `image:` y dejar `FORCEUPDATE=False`).
+
+Procedimiento completo, verificación y rollback:
+[`zomboid/README.md` → Actualizar la versión del juego](zomboid/README.md#actualizar-la-versión-del-juego).

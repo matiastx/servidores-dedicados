@@ -6,7 +6,12 @@ Runbook operativo del server dedicado. Imagen:
 
 > **Estado**: recreado desde cero el **2026-11-04**. Mundo nuevo, INI nuevo,
 > SandboxVars nuevas y DB de usuarios nueva. Se conservaron los items de
-> Workshop (hoy **139**) y se restauró la whitelist.
+> Workshop (hoy **140**) y se restauró la whitelist.
+>
+> **2026-11-09**: **juego actualizado a 42.22.2** (venía en 42.21.0). Como
+> todavía **no hay imagen oficial `42.22`**, se actualizó con
+> **`FORCEUPDATE=True`** (SteamCMD `+app_update 380870` en la rama `public`).
+> Ver [Actualizar la versión del juego](#actualizar-la-versión-del-juego).
 >
 > **2026-11-05**: `SELF_MANAGED_MODS=True` (el INI manda, lo gestiona el bot) y
 > nuevo boton **🧩 MODS = Cliente** que deja el server identico al cliente.
@@ -58,9 +63,10 @@ Runbook operativo del server dedicado. Imagen:
 
 | Que | Valor | Donde vive |
 |---|---|---|
-| Mods cargados | **57** (los 56 del cliente + `damnlib`) | `Mods=` en el INI |
-| Items de Workshop | **139** | `WorkshopItems=` en el INI |
-| Mods disponibles (activables a mano) | **186** en el workshop del server | catalogo del bot |
+| Version del juego | **42.22.2** (actualizada el 2026-11-09) | `FORCEUPDATE=True` + log del contenedor |
+| Mods cargados | **173** (los 56 del cliente + `damnlib` + los que activo el dueño) | `Mods=` en el INI |
+| Items de Workshop | **140** | `WorkshopItems=` en el INI |
+| Mods disponibles (activables a mano) | **190** en el workshop del server | catalogo del bot |
 | Overrides de mods (on/off manual) | `damnlib` en `on` (el resto segun se use el bot) | `/opt/backups/zomboid-mods-override.json` |
 | Reglas internas de orden de carga | activas (resumen en el panel del bot) | `zomboid_control.py` |
 | Texturas del cuerpo | 3 variantes (ON / DOLL / NUDE): se deja una sola activa | boton 🎨 en 🎛️ MODS |
@@ -360,7 +366,7 @@ que se respetan al **agregar, quitar, activar o desactivar** mods. Viven en
 contenido(mod) = <mod>/common/**
               + <mod>/<version>/common/**
               + <mod>/<version>/**   (excluyendo el subdirectorio common/)
-<version> = carpeta numerica mas alta <= version del juego (42.21)
+<version> = carpeta numerica mas alta <= version del juego (42.22)
 ```
 
 > **Bug encontrado y corregido el 2026-11-05**: el metadata de los mods unia
@@ -383,13 +389,24 @@ contenido(mod) = <mod>/common/**
 | `versionmin` > version del juego | **CleanUI** (pide 42.22, corre 42.21) |
 | `require` inexistentes | **0 entre los mods activos** · 2 mods no activables todavia (`SM4BootsExpandedB42`, `SM4BootsExpandedB42VanillaONLY`) |
 
+> **Desde el 2026-11-09 (juego 42.22.2) `CleanUI` ya NO avisa**: su
+> `versionmin` es `42.22.0` y el server corre `42.22.2`. La regla de
+> `versionmin` sigue activa (avisa y bloquea la activacion de cualquier mod que
+> pida una version mas nueva que la del server).
+>
+> La tabla de arriba quedo congelada con la medicion del 2026-11-05 (57 mods,
+> juego 42.21.0). Los numeros de mods/choques dependen de cuantos mods haya
+> cargados: el servidor tiene hoy **173** en el `Mods=` (ver
+> [Resumen del estado actual](#resumen-del-estado-actual)).
+
 > El juego **no** aplica `incompatible=`: los mods incompatibles se cargan
 > igual y solo se pisan archivos (gana el ultimo del `Mods=`). Por eso la regla
 > es **avisar**, no bloquear en runtime.
 >
 > `CleanUI` (pide juego 42.22, corre 42.21) se **marca y avisa**: no se
 > desactiva solo, pero **bloquea su activacion** mientras el server no se
-> actualice.
+> actualice. **Resuelto el 2026-11-09**: el server paso a 42.22.2 y `CleanUI`
+> ya no pide mas version que la que corre.
 
 **Que hace el bot:**
 
@@ -831,6 +848,78 @@ Todos los scripts operativos hacen preflight de `players_connected()` y abortan
 si no es 0. Si hay que reiniciar con jugadores, hace falta confirmacion
 explicita del dueño.
 
+## Actualizar la versión del juego
+
+El server y el cliente tienen que correr la **misma version**: si el cliente
+se actualiza y el server no, no se pueden conectar.
+
+La imagen trae el juego **horneado** y su entrypoint **no actualiza** salvo
+`FORCEUPDATE=true`. Hay dos caminos:
+
+| Camino | Cuando | Que hay que tocar |
+|---|---|---|
+| **A — cambiar el tag de la imagen** | hay imagen oficial del tag | `image:` en `docker-compose.yml` + commit + redeploy |
+| **B — `FORCEUPDATE=True`** | **todavia no hay imagen del tag** | env var `FORCEUPDATE=True` en Coolify + redeploy |
+
+Con el camino **B** el entrypoint corre SteamCMD (`+app_update 380870`, rama
+`public`) y deja el server en la **ultima version publica**.
+
+> **Consecuencia del camino B**: el juego actualizado queda en la **capa del
+> contenedor**, no en un volume → **cada recreacion vuelve a descargar el
+> parche (~2 GB)**. Es un trade-off temporal: apenas se publique la imagen
+> oficial del tag, hay que volver al camino A y dejar `FORCEUPDATE=False`.
+
+A fecha **2026-11-10** el ultimo push de la imagen es del **2026-10-25**
+(`latest` y `latest-release` apuntan al digest de `42.20.4-release-2`) y
+**no hay tag `42.22`**: por eso el server quedo en **42.22.2** con el camino B.
+
+### Procedimiento (caso 42.22.2, 2026-11-09)
+
+1. **Preflight**: 0 jugadores conectados (`players_connected()`), contenedor
+   sano, watcher y bot activos.
+2. **Backup** en `/opt/backups/backup-pre-update-<ts>/`: tar del volume de datos
+   (mundo + INI), INI, SandboxVars, overrides de mods, version del juego y
+   estado de los toggles de mapa.
+3. **Activar `FORCEUPDATE`** en las **dos** copias de la env var de la DB de
+   Coolify (preview y runtime) y en el `.env` en disco de la app.
+4. **Redeploy**: `POST /api/v1/applications/<uuid>/restart` contra el endpoint
+   **local** de Coolify (`http://127.0.0.1:8000/api/v1`): la API publica esta
+   detras de Cloudflare y el VPS no la puede usar.
+5. **Verificar** el arranque (contadores en
+   [Verificacion del arranque](#verificacion-del-arranque)).
+6. **Refrescar la version** que muestra el bot (ver abajo).
+
+### La version que ve el bot
+
+`zc.game_version()` lee `/opt/backups/zomboid-game-version.json` (cache en
+disco, TTL 900 s en memoria) y, si el archivo no esta, la saca del log del
+contenedor. Como el archivo **manda**, **hay que refrescarlo a mano en cada
+actualizacion del juego** (si no, el bot sigue anunciando la version vieja):
+
+```bash
+# en el VPS: derivar la version del log del contenedor y escribir el cache
+CID=$(sudo docker ps -aq --filter 'label=coolify.applicationId=8' | head -1)
+VER=$(sudo docker logs "$CID" 2>&1 | grep -oE 'version=[0-9]+\.[0-9]+\.[0-9]+' | tail -1 | cut -d= -f2)
+printf '{"version": "%s", "ts": %s}\n' "$VER" "$(date +%s)" > /tmp/gv.json
+sudo cp /tmp/gv.json /opt/backups/zomboid-game-version.json
+sudo chown root:root /opt/backups/zomboid-game-version.json
+```
+
+`GAME_VERSION_FALLBACK` (en `zomboid_control.py`) es el ultimo recurso: se
+actualiza a mano con cada cambio de version del juego (hoy `42.22.2`).
+
+### Rollback
+
+1. `FORCEUPDATE=False` (DB de Coolify + `.env` en disco).
+2. **Recrear** el contenedor (un `restart` no alcanza: el parche ya esta en la
+   capa del contenedor). El entrypoint, sin `FORCEUPDATE`, deja el juego que
+   trae la imagen horneada (`42.21-release-2` → 42.21.0).
+3. Si el mundo quedo inconsistente, restaurar el tar del volume de datos + el
+   INI + el SandboxVars del backup del paso 2.
+
+> El mundo **no** se pierde al actualizar el juego: vive en el volume
+> `zomboid-data`. Lo que cambia es la version del binario.
+
 ## Recrear el mundo desde cero
 
 Lo que se hizo el 2026-11-04, en orden:
@@ -866,7 +955,7 @@ grep -ac 'FileNotFoundException' /tmp/boot.log   # 0
 grep -ac 'NoSuchFileException'   /tmp/boot.log   # 0
 ```
 
-Referencia de un arranque sano con los 56 mods:
+Referencia de un arranque sano con los 56 mods (juego 42.21.0):
 
 | Contador | Valor |
 |---|---|
@@ -877,6 +966,30 @@ Referencia de un arranque sano con los 56 mods:
 | mods cargados | 56 (conjunto identico al cliente) |
 | `ERROR` | 56 (ruido conocido, ver abajo) |
 | `WARN` | ~1610 (ruido conocido) |
+
+### El log cambio de formato en 42.22
+
+| Que | 42.21 | 42.22 |
+|---|---|---|
+| mods | `Loading: <mod>` | `LOG : Mod ... loading <mod_id>` |
+| errores | lineas que empiezan con `ERROR:` | `> ERROR:` **embebido** en la linea |
+| warnings | lineas que empiezan con `WARN:` | **no hay** lineas que empiecen con `WARN:` |
+
+> Los greps por `^ERROR` / `^WARN` **no sirven** en 42.22: hay que contar
+> `ERROR` como **substring**.
+
+Arranque medido el **2026-11-09** (juego **42.22.2**, **173** mods):
+
+| Contador | Valor |
+|---|---|
+| `SERVER STARTED` | 1 |
+| `RCON: listening` | 1 |
+| `required mod not found` | 0 |
+| `AdvancedAnimator` | 0 |
+| `FileNotFoundException` / `NoSuchFileException` | 0 |
+| mods cargados | **173/173** (`faltan=[]`, `sobran=[]`) |
+| `ERROR` | 47 (ruido conocido: `template ... not found` de los vehiculos KI5) · 0 otros |
+| `WARN` | 0 |
 
 ### Ruido de log conocido (NO es un fallo)
 
@@ -897,9 +1010,11 @@ En `/opt/backups/` del VPS:
 | `vol-data-pre-recreacion-20261104-184840.tar.gz` | volume de datos (mundo + INI + DB) |
 | `vol-workshop-pre-recreacion-20261104-211102.tar.gz` | volume del workshop (2,0 GB) |
 | `backup-pre-recreacion-20261104-180721/` | DB (`ZomboidMGTSolutions.db`), INI, SandboxVars |
+| `backup-pre-update-20261109-165541/` | backup antes de actualizar a 42.22.2: tar del volume de datos (28 MB), INI, SandboxVars, overrides de mods, version del juego y estado de los toggles de mapa |
 | `env-pre-recreate-<ts>` / `compose-pre-recreate-<ts>.yaml` | `.env` y compose previos |
 | `zomboid-mods-watch.py.bak-<ts>` | watcher anterior |
 | `zomboid_control.py` | libreria + CLI de control (RCON, docker, map toggles) |
+| `zomboid_control.py.bak-<ts>` | version anterior de la libreria (deploys del bot) |
 | `bot-telegram.py` | bot v5 |
 | `bot.env` | token del bot (secreto, no versionar) |
 
