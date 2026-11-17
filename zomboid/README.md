@@ -67,19 +67,27 @@ Runbook operativo del server dedicado. Imagen:
 > el collector por su cuenta. Preview/sync/apply confirman la misma captura y
 > toda mutacion exige 0 jugadores por RCON.
 > Ver [MODS = Cliente (captura viva)](#mods--cliente-captura-viva-del-boton).
+>
+> **2026-11-17**: corregido el **guardián del binding RCON** que dejaba el
+> server **apagado e imposible de volver a encender** (leía el binding *vivo*,
+> que Docker borra al parar el contenedor, en vez del *configurado*). **Estado**
+> ahora muestra la **versión del juego del servidor y del cliente**, y los
+> items con versión distinta se listan **con su nombre de Steam**, no sólo con
+> el id. Ver [Estado: versiones y descripciones](#estado-versiones-y-descripciones)
+> y [RCON](#rcon).
 
 ## Resumen del estado actual
 
 | Que | Valor | Donde vive |
 |---|---|---|
-| Version del juego | **42.22.2** (actualizada el 2026-11-09) | `FORCEUPDATE=True` + log del contenedor |
+| Version del juego | **42.22.2** (servidor **y** cliente; actualizada el 2026-11-09) | `FORCEUPDATE=True` + log del contenedor; cliente via `meta.json` de la captura |
 | Mods cargados | **173** (estado actual del INI; la captura viva del cliente tiene 212) | `Mods=` en el INI |
-| Items de Workshop | **140** (estado actual del INI; la captura viva del cliente tiene 253) | `WorkshopItems=` en el INI |
+| Items de Workshop | **140** (estado actual del INI; la captura viva del cliente tiene 266) | `WorkshopItems=` en el INI |
 | Mods disponibles (activables a mano) | **190** en el workshop del server | catalogo del bot |
 | Overrides de mods (on/off manual) | `damnlib` en `on` (el resto segun se use el bot) | `/opt/backups/zomboid-mods-override.json` |
 | Reglas internas de orden de carga | activas (resumen en el panel del bot) | `zomboid_control.py` |
 | Texturas del cuerpo | 3 variantes (ON / DOLL / NUDE): se deja una sola activa | boton 🎨 en 🎛️ MODS |
-| Captura viva del cliente | **212 mods / 253 items** (smoke del 2026-11-16) | collector local -> `/opt/backups/client-state/` |
+| Captura viva del cliente | **212 mods / 266 items** (verificada el 2026-11-17) | collector local -> `/opt/backups/client-state/` |
 | Collector local | listener oculto `ProjectZomboid-ClientStateAgent`, polling cada 5 s | `C:\ProgramData\ProjectZomboid\Collector` |
 | Referencia estatica legacy | solo consultas/CLI/dry-run; **no habilita mutaciones** | `/opt/backups/zomboid-client-*` |
 | Preset de partida | `Apocalypse` | `SERVERPRESET` |
@@ -213,7 +221,9 @@ boton pide el estado; no usa la copia estatica como fallback.
   usa como fallback el conjunto efectivo derivado de **esa misma captura viva**
   (`ST0=0`), nunca una referencia estática anterior.
 - Cada captura lleva metadata propia (`request_id`, `nonce`, `captured_at`) y
-  SHA-256 de los cuatro archivos. La referencia estatica
+  SHA-256 de los cuatro archivos. Desde el **2026-11-17** la metadata incluye
+  además `game_version`: la **versión del juego del cliente**, leida del marker
+  `version=` (sin prefijo) de la última sesión completada. La referencia estatica
   `/opt/backups/zomboid-client-*` queda solo para consultas, CLI y dry-run
   heredados: **nunca habilita una mutacion**.
 
@@ -421,6 +431,70 @@ El bot reporta el avance en el mismo mensaje de Telegram.
   que exige el runbook: `SERVER STARTED` a los 140 s, **173 mods / 140
   items**, catalogo 190, pendientes +0/-0, juego **42.22.2**, 0 `required mod
   not found`, `PLAYERS=0` y RCON solo en `127.0.0.1:27015`.
+
+#### Estado verificado (2026-11-17)
+
+Cambio de tres puntos: el **guardián del binding RCON** (que bloqueaba el
+arranque del server parado), las **versiones del juego en Estado** y los
+**nombres de los items** con versión distinta. Todo con TDD (RED → GREEN) y
+verificación remota.
+
+**Qué se desplegó**:
+
+| Artefacto | Qué |
+|---|---|
+| `tools\ops-deploy-bot-v6.sh` | instalador transaccional del deploy, con los hashes esperados fijados (`EXPECT_ZC` / `EXPECT_BOT`) |
+| `tools\ops-start-server.sh` | instalador **nuevo**: enciende el server con el **mismo** `zc.start_container()` que usa el botón ▶️ Encender y verifica RCON/INI/versiones |
+
+**Backup reversible del deploy**:
+`/opt/backups/deploy-backups/20261117T144425Z-9507f8b49136cb8a`.
+
+**Hashes instalados** (verificados por `sha256sum` remoto):
+
+| Fichero | SHA-256 | Modo/owner |
+|---|---|---|
+| `/opt/backups/zomboid_control.py` | `855a2e9c22aa32efc06b95e60cb9164b2e0972d9e497620505ca489785df1c7a` | `644 root:root` |
+| `/opt/backups/bot-telegram.py` | `c1b35a821c17b9ad32939189cad4f1c03a4e074bd8a764f8968d6a0e54747572` | `700 root:root` |
+| `/opt/backups/bot.env` | (secreto) | `600 root:root` |
+| `/opt/backups/coolify.env` | (secreto) | `600 mati:mati` |
+
+**Estado tras el deploy**:
+
+- `insforge-backup-bot.service`: `active` y `enabled`; **0** errores
+  (`traceback|exception|syntaxerror|importerror`) en el journal.
+- Contenedor del juego: `Up 4 minutes`, `127.0.0.1:27015` **sólo**,
+  `PLAYERS=0`, `rcon_public_exposures() = []`,
+  `rcon_loopback_binding_ok() = True`.
+- INI: **173 mods / 140 items** en disco **y** en el contenedor activo;
+  catálogo **190**; pendientes **+0/−0**; juego **42.22.2**.
+- **Captura viva** verificada con el parser corregido: request
+  `50d0d9b04d2632582d3f849da6597f1b`, `game_version` (cliente) **42.22.2**,
+  **212 mods / 266 items**, F0=212 / ST0=0. Estado: servidor **42.22.2** =
+  cliente **42.22.2**.
+- **No se aplicó ningún sync ni ningún apply**: el INI, las envs de Coolify y el
+  workshop quedaron intactos.
+
+**Limpieza de `/tmp`**: se borró `/tmp/evil-template.txt` (49 bytes, residuo
+de una versión fallida de un test propio que contenía el **token real de
+Telegram**). `/tmp` quedó sticky (`1777`) y sin residuos propios; la búsqueda
+de ficheros con asignaciones `KEY=valor` no devuelve ninguno.
+
+**Suites** (todas verdes):
+
+| Suite | Resultado |
+|---|---|
+| `test-ssh-upload-template.py` | **88 asserts, 0 fallos** |
+| `test-client-state.py` | **164 asserts, 0 fallos** (incluye `game_version` sin la versión de Java) |
+| `test-rcon-binding.py` | **27 asserts, 0 fallos** (nuevo: guardián RCON) |
+| `test-review-hardening.py` | **31 asserts, 0 fallos** |
+| `test-secret-redaction.py` | **74 asserts, 0 fallos** |
+| `test-reglas.py` | **224 asserts, 0 fallos** |
+| `test-bot.py` · `test-real.py` · `test-client-state-task.py` | todo PASS / 0 fallos |
+| `py_compile` + parse de 8 scripts PowerShell | OK |
+
+> **Pendiente operativo (no pedido)**: normalizar `install-bot.sh` en el VPS
+> para que los `.env` *deployed* queden entrecomillados en el próximo
+> reinstalador. Los valores actuales ya están normalizados y verificados.
 
 #### Endurecimiento del deploy, rollback y Coolify
 
@@ -873,7 +947,7 @@ solo cambia la configuracion (`Mods=`), y se aplica con **Aplicar cambios**
 
 Esta lista viene del fixture legacy `MOD_IDS.txt`; sirve para regresiones y
 consultas, **no** para el boton de captura viva ni para el estado real del
-server. La captura viva medida el 2026-11-16 tiene **212 mods / 253 items**.
+server. La captura viva medida el 2026-11-17 tiene **212 mods / 266 items**.
 Los 56 ids legacy en su orden fixture eran:
 
 ```
@@ -1027,6 +1101,61 @@ sudo docker exec coolify-db psql -U coolify -d coolify -tAc \
 El bot corre en el host y conecta a `127.0.0.1:27015`
 (`zomboid_control.RCON_HOST`). **Nunca** hacer port forwarding del 27015.
 
+### El guardián del binding RCON (corregido el 2026-11-17)
+
+Antes de arrancar, apagar, reiniciar o reencender el server, el bot comprueba
+que RCON **no** queda expuesto. Ese guardián tenía un bug que dejaba el server
+**apagado e imposible de volver a encender**:
+
+| Fuente | Con el contenedor **parado** | Con el contenedor **corriendo** |
+|---|---|---|
+| `HostConfig.PortBindings` (**configurado**) | `27015/tcp -> 127.0.0.1:27015` ✅ persiste | persiste ✅ |
+| `NetworkSettings.Ports` / `docker port` (**vivo**) | `{}` ❌ **Docker lo borra al parar** | `127.0.0.1:27015` ✅ |
+
+El guardián leía el binding **vivo** (`docker port`), así que con el contenedor
+parado devolvía "sin binding" y `start_container()` se auto-bloqueaba: el
+servidor se apagaba (bien) pero **nunca podía volver a levantarse**. El error
+que veía el usuario era:
+
+```
+El puerto RCON 27015 no esta publicado solo en loopback.
+No se toca el server hasta corregir el binding.
+```
+
+**Regla actual** (`zomboid_control.py`):
+
+- `rcon_binding_is_loopback(published, host_ip, host_port)` — decisión ** pura**:
+  exige `27015/tcp` publicado, `HostPort=27015` y `HostIp` ∈
+  `{127.0.0.1, ::1}`. Un `HostIp` **vacío** (= `0.0.0.0`, todas las
+  interfaces) se **rechaza**.
+- `rcon_loopback_binding_ok(container)` — valida **siempre** el binding
+  **configurado** (`docker inspect .HostConfig.PortBindings`), que es la
+  intención de Docker y **persiste con el contenedor parado**. Si el
+  contenedor **está corriendo**, además valida el binding **vivo**
+  (`docker port`): los dos tienen que ser loopback.
+- `rcon_host_sockets()` / `rcon_public_exposures()` — leen `ss -lnt` y
+  devuelven los sockets de RCON que **no** son loopback.
+- `start_container(wait=True)` — tras `SERVER STARTED` comprueba las
+  exposiciones: si RCON quedó escuchando en una dirección no-loopback,
+  **para el contenedor** y devuelve error (**fail-closed**). El objetivo
+  "RCON sólo loopback" se mantiene y ahora sí es verificable.
+
+> La invariante sigue siendo la misma: **RCON nunca se expone fuera de
+> loopback**. Lo que cambió es *qué* se comprueba y *cuándo*: la
+> **configuración** decide si se puede arrancar; el **estado vivo** y `ss`
+> verifican que el arranque no haya dejado el puerto a la vista.
+
+Para reproducir el diagnóstico a mano:
+
+```bash
+# binding configurado (persiste parado)
+sudo docker inspect -f '{{json .HostConfig.PortBindings}}' <container>
+# binding vivo (solo mientras corre)
+sudo docker port <container> 27015/tcp
+# exposure real en el host
+sudo ss -lnt | grep 27015
+```
+
 La credencial se resuelve en este orden: `RCONPASSWORD` del contenedor activo
 (leida con una allowlist de una sola clave) y, solo como fallback local, el
 valor `RCONPassword` del INI. Si ninguna fuente contiene una credencial, o
@@ -1075,7 +1204,7 @@ sudo docker compose up -d
 
 | Boton | Que hace |
 |---|---|
-| **Estado** | estado del server |
+| **Estado** | estado del server: juego del **servidor y del cliente**, players, RAM, mods/items y el diff **con nombres de los items** (ver [Estado: versiones y descripciones](#estado-versiones-y-descripciones)) |
 | **Buscar updates** | items de Workshop desactualizados |
 | **🧩 MODS = Cliente** | alinea el server con la captura viva del cliente (ver [MODS = Cliente](#mods--cliente-captura-viva-del-boton)) |
 | **🎛️ MODS on/off** | listado de los 190 mods del server con check para activar/desactivar + reglas de carga + descarga de dependencias (ver [MODS on/off](#mods-onoff-botón-del-bot)) |
@@ -1113,6 +1242,61 @@ Las operaciones que cambian el estado (alta/baja/rol, sincronizacion de mods,
 toggles que reinician) piden **confirmacion con boton**, y la confirmacion
 **expira a los 5 minutos**
 (`PZ_CONFIRMAR[accion] = time.time() + 300`).
+
+### Estado: versiones y descripciones
+
+La pantalla **📊 Estado** (`zc.status_lines()`) muestra, entre otras cosas:
+
+```
+🎮 Version del juego — servidor: <b>42.22.2</b> | cliente: <b>42.22.2</b>
+```
+
+**Versión del servidor**: `zc.game_version()` (cache en
+`/opt/backups/zomboid-game-version.json`, TTL 900 s; fallback al log del
+contenedor).
+
+**Versión del cliente**: `zc.client_game_version()`. Sale de la **última
+captura viva archivada** (`/opt/backups/client-state/archive/<request_id>/meta.json`,
+campo `game_version`); si no hay captura, cae a la referencia legacy y, si
+tampoco, muestra `?`. El campo lo escribe el collector en
+`client-state-capture.ps1` leyendo el marker `version=` **sin prefijo** de la
+última sesión completada del log del cliente:
+
+```
+LOG : General f:0> version=42.22.2 3d39148846 integrity=pending demo=false
+```
+
+> **Trampa importante**: el log también trae las propiedades de Java
+> (`java.runtime.version=25.0.5+8-LTS`, `java.version=25.0.5`,
+> `java.vm.version=25.0.5+8-LTS`). Un regex laxo `version=(\d+\.\d+\.\d+)`
+> captura **la versión de Java** y el Estado anunciaba `25.0.5` como si fuera
+> la del juego. El parser exige ahora que el marker **no** venga precedido por
+> una palabra o un punto (`(?<![\w.])version=…`), así que sólo cuenta el
+> marker real del juego.
+
+**Nombres de los items**: los items con **versión distinta**, los que están
+**sólo en cliente** y los que están **sólo en el server** se listan con el
+**título de Steam** además del id:
+
+```
+⚠️ <b>1 items con version distinta</b>
+   • Fluffy Hair [B41 & B42] (<code>2447729538</code>) srv=111 cli=222
+➕ Solo en cliente: 1 (CleanUI [B42] (3437629766))
+```
+
+El título se resuelve con la **misma Web API de Steam** que usa "Buscar
+updates" (`steam_details`) a través de `zc.steam_titles()`:
+
+- **una sola consulta** para todos los ids que se muestran en la pantalla;
+- **caché en memoria** con TTL de 1800 s y timeout de 20 s por petición;
+- si Steam no responde, el **id** se muestra tal cual: nunca se inventa una
+  descripción.
+
+> **Bug de escapado HTML corregido el 2026-11-17**: el escapado del bot
+> (`_tg_esc`) y del controlador (`html_escape`) producían `<lt;` y `>gt;` en vez
+> de `<` y `>`. Telegram rechazaba el mensaje cuando un título de mod
+> traía `<` o `>` (p. ej. `Coche viejo <Old> & Co`). Ahora se usan las
+> entidades correctas y hay un test que lo fija.
 
 El watcher y el bot avisan por Telegram cuando hay updates de Workshop y
 cuando difieren por jugadores conectados.
@@ -1421,6 +1605,13 @@ sudo journalctl -u zomboid-mods-watch.service -n 50 --no-pager
 
 ## Pendientes
 
+- [ ] Reintentar **🧩 MODS = Cliente → Sincronizar con el cliente** desde
+      Telegram: el camino stop → start ya no se auto-bloquea con el guardián
+      RCON corregido (2026-11-17). Verificar ademas que **Estado** muestra la
+      version del cliente tras la captura.
+- [ ] Normalizar `install-bot.sh` en el VPS para que los `.env` *deployed*
+      queden entrecomillados en el proximo reinstalador. Los valores actuales
+      ya estan normalizados y verificados.
 - [ ] Coordinar la rotacion de las passwords `admin`, RCON y del server, y la
       creacion de una identidad remota/SSH dedicada. Requiere una decision
       operativa y no bloquea el deploy tecnico verificado.
