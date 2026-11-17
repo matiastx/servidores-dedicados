@@ -58,26 +58,38 @@ Runbook operativo del server dedicado. Imagen:
 > y no sobre el id **real**: se podian activar las dos variantes del mismo item
 > a la vez. Corregido con un helper unico de resolucion; la pantalla legacy
 > ahora dice los ids que de verdad se escriben en `Mods=`.
+>
+> **2026-11-16**: **🧩 MODS = Cliente** ahora usa una **captura viva** ligada a
+> `request_id + nonce`; no cae a la referencia estatica. El collector local
+> corre como listener oculto mediante `wscript.exe`, sin ventana CMD o
+> PowerShell, y sólo captura cuando se pulsa ese botón. **🎛️ Aplicar cambios**
+> reutiliza la captura vigente o pide pulsar **🧩 MODS = Cliente**; nunca abre
+> el collector por su cuenta. Preview/sync/apply confirman la misma captura y
+> toda mutacion exige 0 jugadores por RCON.
+> Ver [MODS = Cliente (captura viva)](#mods--cliente-captura-viva-del-boton).
 
 ## Resumen del estado actual
 
 | Que | Valor | Donde vive |
 |---|---|---|
 | Version del juego | **42.22.2** (actualizada el 2026-11-09) | `FORCEUPDATE=True` + log del contenedor |
-| Mods cargados | **173** (los 56 del cliente + `damnlib` + los que activo el dueño) | `Mods=` en el INI |
-| Items de Workshop | **140** | `WorkshopItems=` en el INI |
+| Mods cargados | **173** (estado actual del INI; la captura viva del cliente tiene 212) | `Mods=` en el INI |
+| Items de Workshop | **140** (estado actual del INI; la captura viva del cliente tiene 253) | `WorkshopItems=` en el INI |
 | Mods disponibles (activables a mano) | **190** en el workshop del server | catalogo del bot |
 | Overrides de mods (on/off manual) | `damnlib` en `on` (el resto segun se use el bot) | `/opt/backups/zomboid-mods-override.json` |
 | Reglas internas de orden de carga | activas (resumen en el panel del bot) | `zomboid_control.py` |
 | Texturas del cuerpo | 3 variantes (ON / DOLL / NUDE): se deja una sola activa | boton 🎨 en 🎛️ MODS |
-| Referencia del cliente | union 56 mods / 138 items | `/opt/backups/zomboid-client-*` |
+| Captura viva del cliente | **212 mods / 253 items** (smoke del 2026-11-16) | collector local -> `/opt/backups/client-state/` |
+| Collector local | listener oculto `ProjectZomboid-ClientStateAgent`, polling cada 5 s | `C:\ProgramData\ProjectZomboid\Collector` |
+| Referencia estatica legacy | solo consultas/CLI/dry-run; **no habilita mutaciones** | `/opt/backups/zomboid-client-*` |
 | Preset de partida | `Apocalypse` | `SERVERPRESET` |
 | Mapa | `Muldraugh, KY` | `Map=` en el INI |
 | MaxPlayers | `8` | `MaxPlayers=` en el INI |
 | Jugadores maximos | 8 slots (TCP `16262-16272`) | compose |
 | RCON | `127.0.0.1:27015` (solo loopback) | compose |
+| SSH publico | cerrado por UFW; solo LAN `192.168.68.0/24` y red Coolify `10.0.1.0/24` | UFW |
 | Mundo | nuevo (2026-11-04) | volume `zomboid-data` |
-| Arranque | ~80 s con los 57 mods | - |
+| Arranque | ~80 s (medición histórica con 57 mods; el set actual tiene 173) | - |
 
 ## Arranque
 
@@ -133,7 +145,7 @@ el juego verifica lo que hay en el volume `zomboid-workshop`.
 Por eso:
 
 - `zomboid-workshop` se conserva entre recreaciones (2,6 GB; borrarlo obliga a
-  re-descargar los 137 items).
+  re-descargar los 140 items actuales).
 - `zomboid-data` (mundo + INI + SandboxVars + DB) si se borra, para empezar de
   cero. Ver [Recrear el mundo](#recrear-el-mundo-desde-cero).
 
@@ -149,8 +161,9 @@ formas:
 
 - `set_ini_option` de la imagen escribe el valor **plano** en las dos ramas
   (append y replace) y queda estable entre reinicios.
-- El server levanta **56/56 mods, 0 `required mod not found`** con la lista
-  plana.
+- La lista plana se validó entonces con **56/56 mods, 0
+  `required mod not found`**; el estado actual tiene 173 mods (ver
+  [Resumen del estado actual](#resumen-del-estado-actual)).
 
 El orden de `MOD_IDS` es el del `Mods=` del server (derivado del cliente) con
 `TombBodyCompat` insertado justo despues de `TombBody`. El juego usa ese
@@ -163,91 +176,283 @@ Desde el 2026-11-05 la verdad vive en **el INI del server**, no en el compose:
 | Variable | Valor | Que hace |
 |---|---|---|
 | `SELF_MANAGED_MODS` | `True` | el entrypoint **no** toca `Mods=` / `WorkshopItems=`; quedan bajo control del bot |
-| `MOD_IDS` | 56 ids, 894 chars | se mantiene **alineado** con el INI (el bot lo actualiza junto con el INI) |
-| `WORKSHOP_IDS` | 139 ids, 1542 chars | idem |
+| `MOD_IDS` | 173 ids, 2463 chars | se mantiene **alineado** con el INI (el bot lo actualiza junto con el INI) |
+| `WORKSHOP_IDS` | 140 ids, 1539 chars | idem |
 
 > **Por que `True`.** Con `False` el entrypoint reescribe `Mods=` y
 > `WorkshopItems=` en cada arranque a partir del env, asi que cualquier cambio
-> escrito a mano en el INI se pierde al reiniciar y el bot depende de la API de
-> Coolify para poder aplicar un cambio. Con `True` el INI manda y el bot puede
-> aplicar los cambios reiniciando el contenedor (90 s) sin depender de la API.
-> El bot sigue actualizando `MOD_IDS` / `WORKSHOP_IDS` en Coolify, asi que las
-> dos fuentes nunca divergen y volver a `False` es seguro.
+> escrito a mano en el INI se pierde al reiniciar. Con `True` el INI manda y el
+> bot escribe el conjunto confirmado directamente. Aun así, **toda**
+> actualización de envs requiere el snapshot previo de la API de producción de
+> Coolify (`is_preview=False`), incluso con `SELF_MANAGED_MODS=True`: sin ese
+> snapshot no existe un rollback verificable y la mutación falla cerrada. El
+> bot mantiene `MOD_IDS` / `WORKSHOP_IDS` alineados y, si una actualización
+> parcial falla, restaura ambas envs.
 
 Las variables viven **cifradas en la DB de Coolify** (`environment_variables.value`
-tiene cast `encrypted`), duplicadas por fila (buildtime + runtime). Se editan
-desde el panel de Coolify o con la API (`PATCH /applications/{uuid}/envs`,
-matchea por `key`); para tocar la DB a mano:
+tiene cast `encrypted`), duplicadas por fila (buildtime + runtime). El flujo
+normal las actualiza el bot mediante `PATCH /applications/{uuid}/envs`
+(matchea por `key`) con rollback de ambas envs. No editar la DB a mano: toda
+mutación del VPS debe llegar como instalador LF-only en `/tmp/` y ejecutarse
+como `bash /tmp/x.sh`; nunca con comandos remotos inline.
 
-```bash
-# dentro del contenedor de Coolify, con bootstrap de Laravel (NO tinker inline:
-# el quoting de PowerShell rompe los heredocs)
-php /tmp/coolify-update.php
+### MODS = Cliente (captura viva del boton)
+
+El boton **🧩 MODS = Cliente** deja el server alineado con el cliente. La fuente
+de verdad es una **captura viva** generada por el collector local cuando el
+boton pide el estado; no usa la copia estatica como fallback.
+
+#### Que significa "captura viva"
+
+- Los **items de Workshop** se enumeran en el momento del request: es el
+  Workshop instalado en la PC ahora.
+- Las **capas y el orden de mods** salen de la **ultima sesion completada** del
+  log del cliente (`GameThread exited..`). Si hay una sesion todavia en curso,
+  se ignora; si no existe ninguna sesion completada, la captura falla cerrada.
+- Si la capa que manda el server (`f:0 st:0`) está vacía, el cálculo de orden
+  usa como fallback el conjunto efectivo derivado de **esa misma captura viva**
+  (`ST0=0`), nunca una referencia estática anterior.
+- Cada captura lleva metadata propia (`request_id`, `nonce`, `captured_at`) y
+  SHA-256 de los cuatro archivos. La referencia estatica
+  `/opt/backups/zomboid-client-*` queda solo para consultas, CLI y dry-run
+  heredados: **nunca habilita una mutacion**.
+
+#### Protocolo request/response
+
+1. El bot genera un `request_id` de 32 hex y un `nonce` de 48 hex, y crea el
+   request en `/opt/backups/client-state/requests/<request_id>.json` con
+   propietario `root:mati`, permisos `0600` y expiración validada por el reloj
+   del VPS. El canal del collector y el lock compartido están fijados a la
+   identidad `mati` (`/home/mati/.pz-client-state.lock`).
+2. El collector local lo ve por el canal SSH existente, captura la PC y escribe
+   la respuesta **solo** en
+   `/opt/backups/client-state/responses/<request_id>/`.
+3. `READY` se instala al final: marca que el snapshot esta completo.
+4. El VPS valida binding, propietario, timestamps, hashes, tamanos, conteos,
+   ids y sintaxis antes de aceptar la captura.
+5. Preview, confirmacion, sync y apply conservan el mismo
+   `request_id + nonce`. El worker de apply no vuelve a capturar y no puede
+   cambiar el conjunto que el usuario confirmo. Preview y sync muestran un
+   digest SHA-256 inmutable del plan. **Aplicar cambios** calcula además su
+   propio digest del plan y lo conserva en `PZ_MODS_APPLY_PENDING`, separado
+   del digest del sync. Antes de mutar, `_apply_mods` recalcula el digest bajo
+   el lock de escritura y aborta si cambió la captura, el estado del server,
+   el orden final, los items, el quarantine, los overrides o el catálogo.
+6. Sólo **🧩 MODS = Cliente** crea un request y una captura nueva. **🎛️
+   Aplicar cambios** reutiliza la captura vigente de ese botón; si no existe
+   o venció, pide pulsar **🧩 MODS = Cliente** y no consulta el collector por
+   su cuenta.
+
+Si la PC esta apagada, el collector no responde, la captura no pertenece al
+request o vencio, el bot **cancela y avisa**. Un refresh fallido invalida la
+captura anterior: nunca se reutiliza un snapshot viejo como fallback.
+
+#### Collector local protegido
+
+La fuente del collector está en `G:\Proyectos\InsForge\tools`, pero **la copia
+que ejecuta la tarea** vive en `C:\ProgramData\ProjectZomboid\Collector`. El
+registrador instala **siete componentes** protegidos por el manifiesto
+SHA-256 `integrity.json`: `client-state-agent.ps1`,
+`client-state-capture.ps1`, `client-state-hidden.vbs`, `ssh-run.ps1`,
+`collector.env`, `known_hosts` y `opencode_ed25519`. No copia el `.env.local`
+completo ni tokens de API.
+
+El registrador deja la copia de ejecución y el árbol fuente
+`G:\Proyectos\InsForge`, `tools` y `.ssh` con ACL explícita para el usuario
+actual, `SYSTEM` y `Administrators`. Esto **estrecha deliberadamente** el
+acceso local a scripts, herramientas y material SSH.
+
+La tarea programada `ProjectZomboid-ClientStateAgent`:
+
+- inicia `C:\Windows\System32\wscript.exe //B
+  C:\ProgramData\ProjectZomboid\Collector\client-state-hidden.vbs`;
+- el launcher abre Windows PowerShell con `windowstyle=0` y espera al proceso
+  hijo, por lo que no aparece una ventana CMD o PowerShell;
+- el listener queda oculto y, en reposo, sólo consulta nombres de requests por
+  SSH: no lee el Workshop ni los logs del cliente, no captura y no sube datos
+  sin un request válido;
+- al procesar un request válido muestra un `NotifyIcon` temporal en el área de
+  notificación y siempre lo libera en `finally`, incluso si la captura falla;
+- usa el principal `Interactive`, por lo que requiere la sesion del usuario
+  disponible en Windows;
+- tiene trigger `AtLogOn` y trigger periodico cada 5 minutos;
+- queda `IgnoreNew`, sin limite de ejecucion y con 999 reinicios;
+- serializa instancias con el mutex
+  `Global\ProjectZomboidClientStateAgent`;
+- escribe su log en
+  `C:\ProgramData\ProjectZomboid\Collector\logs\client-state-agent.log`.
+
+`ssh-run.ps1` es **sólo transporte**: key-only, `BatchMode=yes`,
+`IdentitiesOnly=yes`, host key fijada, `known_hosts` exclusivo, `RemotePath`
+exactamente `/tmp/` y deadline real para `ssh.exe`/`scp.exe`. Backup, compile,
+restart y rollback del VPS viven en el instalador transaccional, no en el
+helper.
+
+El deadline live por defecto es **120 segundos**. El collector y el VPS
+rechazan NUL/CR/LF fuera de los payloads permitidos y el snapshot se escribe
+LF-only para que sus hashes coincidan byte a byte. La propiedad, expiración y
+permissiones de requests/responses son autoritativas en el VPS; la ventana
+local del collector sólo acota el trabajo de la PC.
+
+Para registrar, proteger o recuperar la instalacion:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  G:\Proyectos\InsForge\tools\register-client-state-task.ps1
 ```
 
-### MODS = Cliente (botón del bot)
+> **No ejecutar un smoke de captura con `UploadAndRunFile`.** Ese canal toma
+> el lock compartido `/home/mati/.pz-client-state.lock` mientras espera al
+> collector, que necesita el mismo lock: se produce un deadlock. Para validar
+> una captura sin mutar el server, usar el canal de consulta SSH.
 
-El botón **🧩 MODS = Cliente** del bot deja el server **idéntico** al cliente.
-El cliente es la fuente de verdad y su referencia vive en el VPS, subida desde
-la PC:
+#### Que hace el bot al sincronizar
 
-| Archivo en el VPS | Que es |
-|---|---|
-| `/opt/backups/zomboid-client-mods.txt` | **union** de los mods que carga el cliente, en orden de carga |
-| `/opt/backups/zomboid-client-mods-f0.txt` | **capa 1**: mods locales del cliente (`f:0`) |
-| `/opt/backups/zomboid-client-mods-st0.txt` | **capa 2**: mods que manda el server (`f:0 st:0`) |
-| `/opt/backups/zomboid-client-ids.txt` | ids de Workshop descargados en el cliente |
-| `/opt/backups/zomboid-client-ref.json` | metadata (fecha, conteos) |
+1. **🧩 MODS = Cliente** solicita una captura viva; compara `Mods=` /
+   `WorkshopItems=` del server y muestra el preview. La sincronización reutiliza
+   esa misma captura y no abre otra consulta al collector.
+2. Muestra el plan y pide confirmacion ligada al `request_id`.
+3. Antes de cualquier stop/restart/redeploy exige `players_connected() == 0`.
+   Si RCON no permite comprobarlo, aborta: no reinicia a ciegas.
+4. Detiene el server y actualiza `Mods=` y `WorkshopItems=` juntos en una sola
+   escritura atomica. Las carpetas de Workshop sobrantes se mueven a una
+   quarantine fuera del arbol gestionado; solo se eliminan despues de que el
+   deploy y la verificacion terminen.
+5. `WorkshopItems=` se arma con los items del cliente mas las dependencias y
+   overrides realmente necesarios; **no** es la union con los items viejos del
+   server.
+6. Recrea symlinks case-insensitive y las carpetas `AnimSets` /
+   `actiongroups`; toma el estado previo de `MOD_IDS` / `WORKSHOP_IDS` desde la
+   API de produccion de Coolify (`is_preview=False`) y restaura ambas envs si
+   una mutacion o su verificacion falla.
+7. Encende el server, espera la descarga de items nuevos, repara el layout y
+   verifica que carguen los mods correctos.
+8. Verifica que el server cargo los mods correctos; si falta alguno, hace el
+   reinicio adicional permitido, siempre con el preflight de 0 jugadores.
 
-La referencia se genera con `G:\Proyectos\InsForge\tools\ops-client-export.ps1`
-(lee `C:\Users\matia\Zomboid\console.txt` y el workshop local, y sube todo al
-VPS). **Hay que correrla despues de jugar/conectar**, porque el log del juego es
-la unica fuente que dice que mods cargo el cliente y en que orden.
-
-Que hace el bot al sincronizar:
-
-1. Compara `Mods=` / `WorkshopItems=` del server contra la referencia y arma el
-   plan (agregar/quitar mods, agregar/quitar items, ajustar el orden).
-2. Pide **confirmacion** (expira a los 5 min) y avisa si hay jugadores.
-3. Detiene el server, escribe `Mods=` y `WorkshopItems=` en el INI y borra del
-   workshop las carpetas que no tiene el cliente.
-4. **Conserva el orden actual** del server para los mods que ya tiene y
-   **inserta los mods nuevos** en la posicion que les da el cliente. Si el
-   cliente impose otro orden, se adopta el del cliente.
-5. Recrea los symlinks case-insensitive y las carpetas `AnimSets` /
-   `actiongroups` (AdvancedAnimator las exige).
-6. Actualiza `MOD_IDS` / `WORKSHOP_IDS` en Coolify para que no divergan.
-7. Encende el server y **espera a que el juego baje los items nuevos** del
-   Workshop; recien ahi repara el layout de esos items.
-8. Verifica que el server cargo los mismos mods que el cliente. Si falta alguno,
-   reinicia una vez mas.
-
-El bot va reportando el **avance en %** en el mismo mensaje de Telegram
-(barra de progreso, ~1 actualizacion cada 4 s).
+El bot reporta el avance en el mismo mensaje de Telegram.
 
 > El bot **no** copia el ACF del cliente al server: ese archivo es el estado
 > de Steam del workshop y copiarlo haria que el server creyera que ya tiene
 > los items descargados.
 
-Verificado el 2026-11-05 con el caso real: el cliente tenia **138** items de
-Workshop y el server **137** (faltaba `3832274571` = FloorAttackHighlightFix).
-El bot agrego el item, espero la descarga, reparo el layout y quedo
-`IDENTICO: True` con 56/56 mods cargados.
+#### Estado verificado (2026-11-16)
+
+- Smoke live real por el canal de consulta: `ok=true`, **212 mods / 253 items**,
+  F0=212, ST0=0, request `c925763ce66990f7579fecf16a984fb9`, captura
+  `2026-11-16T11:42:10.6437633+00:00`, digest del plan
+  `82c4f9dd356922c4ef176dc854d8120efcf644e94ee7848d7126fcc2a9783b09`.
+  El INI, el contenedor y el estado del Workshop no cambiaron; no se aplico
+  ningun plan.
+- **Captura viva end-to-end verificada el 2026-11-16 21:42 (-03)** pulsando
+  **🧩 MODS = Cliente** en el bot (la unica via que crea capturas): request
+  `89508f3da3a16c1aecdb6015f2b1e4bc`, nonce
+  `a27c0e91cd0df494c7e5942e450b72ebd1e7b3c711d6e47d`, captura
+  `2026-11-17T00:42:36.6416939+00:00` (reloj del VPS), **212 mods / 266
+  items**, F0=212, ST0=0, origen de capas
+  `2026-11-10_12-57_DebugLog.txt` (ultima sesion completada). Los SHA-256 de
+  `meta.json` coinciden con los de los ficheros reales, `READY` contiene el
+  `request_id`, todos los ficheros son `0600 mati:mati` y LF-only (0 CR), y el
+  snapshot queda archivado en
+  `/opt/backups/client-state/archive/<request_id>/`. El INI, el contenedor y
+  el estado del Workshop quedaron sin cambios: no se aplico ningun plan ni se
+  reinicio el juego.
+- Estado del server verificado por separado: **173 mods / 140 items** en el
+  INI y en el contenedor activo, catalogo de **190 mods**, Coolify snapshot
+  OK y `PLAYERS=0`.
+- `insforge-backup-bot.service`: `active`, `running` y `enabled`; 0 errores
+  recientes en el journal.
+- Hashes instalados:
+  `zomboid_control.py` = `92a0eb41de5e8424bfbb5bae4a8c727f4309f2ae7850563df634e1812c855c55`;
+  `bot-telegram.py` = `da6b30efadaf18d599e3d99a3a5d3e4fd26f5b065efbb2cdab9e3f6df10a191b`.
+  Modos/owner: `644 root:root` (controlador) y `700 root:root` (bot).
+- Ultimo backup reversible del deploy:
+  `/opt/backups/deploy-backups/20261116T224451Z-79d8cf3fc9a57366/`.
+- RCON escucha solo en `127.0.0.1:27015`. UFW queda activo y deja SSH 22 solo
+  para la LAN y la red Coolify; no esta abierto a internet.
+- El audit final no encontro residuos propios en `/tmp` (`x.sh*`, `pz-up.*`,
+  `pz-client-state-*`, payloads `*.new` ni `upload.*`).
+- El deploy **no reinicio el contenedor del juego**: sigue `Up 3 hours` con
+  `Mods=` (173) y `WorkshopItems=` (140) intactos. El watcher
+  (`zomboid-mods-watch.timer`, cada 15 min) tampoco escribe el INI: su ultima
+  corrida termino con `sin updates pendientes` y el mtime del INI es anterior
+  al deploy.
+- Snapshot de la API de produccion de Coolify OK (una fila `is_preview=False`
+  por clave): `MOD_IDS` 173 ids / 2463 chars, `WORKSHOP_IDS` 140 ids / 1539
+  chars, `SELF_MANAGED_MODS='True'`. Las envs de la API coinciden byte a byte
+  con el INI activo.
+
+#### Endurecimiento del deploy, rollback y Coolify
+
+- Toda mutacion remota del VPS entra como instalador **LF-only** en `/tmp/` y
+  se ejecuta como `bash /tmp/x.sh`. `ssh-run.ps1` exige `RemotePath=/tmp/`,
+  genera un staging aleatorio, toma el lock, verifica que `/tmp/x.sh` sea un
+  archivo regular del usuario, del tamano esperado y con el SHA-256 esperado,
+  y lo elimina al terminar. El helper **sólo transporta**: el backup, la
+  compilación, el restart y el rollback están en el instalador.
+- **Staging remoto**: `/tmp` debe ser sticky (`01777`) o el flujo aborta. El
+  directorio privado se crea **y se verifica en la misma orden remota**
+  (existe, no es symlink, es del usuario SSH y es `0700`), y se re-verifica
+  justo antes de publicar. El path del dir no se registra. `chmod` + `mv -T`
+  ocurren dentro del dir privado, asi que el archivo aparece en `/tmp/` ya
+  con `0600`/`0700`: no hay ventana world-readable y `mv -T` no sigue
+  symlinks pre-colocados.
+- **Lock**: `$HOME/.pz-client-state.lock` se abre en modo **append** (nunca
+  trunca un objetivo), solo si no es symlink y es del usuario SSH, y se
+  fuerza a `0600`.
+- **Plantillas**: los valores interpolados se validan contra un charset
+  cerrado (`^[A-Za-z0-9._:/@+=,-]+$`) antes de sustituir. Sin ese filtro, un
+  token con `$(...)`, backticks o `;` inyectaria comandos en el `.env` que se
+  carga con `source` como root. En `install-bot.sh` los valores ademas van
+  entrecomillados en el `.env` destino.
+- **Identidad SSH**: `SSH_USER` (`^[a-z_][a-z0-9_-]{0,31}$`) y los hosts
+  (`^[A-Za-z0-9:][A-Za-z0-9.:_-]{0,253}$`) se validan antes de construir el
+  argv de `ssh.exe`: un host que empiece por `-` lo interpretaria como opcion
+  y un `@` redirigiria la conexion a otro host.
+- SSH es key-only: `BatchMode=yes`, `IdentitiesOnly=yes`,
+  `StrictHostKeyChecking=yes`, `GlobalKnownHostsFile=none` y un
+  `known_hosts` exclusivo. No hay fallback por password.
+- La transaccion de mods hace una sola escritura atomica del INI y conserva
+  owner/group/modo (`mati:mati`, `0644`, uid/gid 1000). Mueve el Workshop
+  sobrante a una quarantine fuera del árbol gestionado, conserva el snapshot
+  API de Coolify y verifica el contenedor activo. Si falla, restaura INI,
+  envs y quarantine y devuelve el server al estado anterior; con
+  `SELF_MANAGED_MODS=False` hace redeploy con las envs previas y comprueba el
+  INI activo.
+- El estado previo de `MOD_IDS` / `WORKSHOP_IDS` sale de la API de producción
+  de Coolify y exige `is_preview=False` explícito y exactamente una fila de
+  producción por clave. Con `SELF_MANAGED_MODS=True` ese snapshot sigue siendo
+  obligatorio. **No se edita la DB de Coolify a mano.**
+- Un PATCH de Coolify ambiguo se reconcilia con un GET nuevo. Si el estado API
+  cambio, se restaura el valor previo; si no se puede confirmar, la operacion
+  falla cerrada.
+- El runtime se selecciona desde el **único contenedor `running`** de la app.
+  `container_env()` exige una allowlist explícita y nunca devuelve el
+  environment completo. La credencial RCON se obtiene de `RCONPASSWORD` de ese
+  contenedor, con el INI como fallback local acotado.
+- La autenticación y cada comando RCON deben conservar los request IDs
+  coincidentes. Una credencial vacia, un RCON que no responde o un request ID
+  distinto hace abortar el preflight; nunca se reinicia a ciegas.
 
 ### MODS on/off (botón del bot)
 
-El botón **🎛️ MODS on/off** lista **los 186 mods que hay en el workshop del
+El botón **🎛️ MODS on/off** lista **los 190 mods que hay en el workshop del
 server** con un check al lado, para activarlos o desactivarlos a gusto.
 
 | Boton | Que hace |
 |---|---|
-| `pz_mods_panel` | abre el listado (paginado, 8 mods por pagina = 23 paginas) |
+| `pz_mods_panel` | abre el listado (paginado, 8 mods por pagina = 24 paginas) |
 | `pz_mods_cat:<clave>` | filtra el listado por categoria (vacio = todos) |
 | `pz_mods_p:<n>[:<cat>]` | cambia de pagina (dentro del filtro) |
 | `pz_tog:<hash>:<pag>[:<cat>]` | activa/desactiva un mod (hash = sha1 del id, 10 hex) |
-| `pz_mods_apply` | pide confirmacion para aplicar (expira a los 5 min) |
-| `pz_ok_mods_apply` | aplica los cambios (stop -> INI -> start -> verificar) |
+| `pz_mods_apply` | reutiliza la captura viva creada por **🧩 MODS = Cliente** y muestra el plan exacto (expira a los 5 min); no abre el collector |
+| `pz_ok_mods_apply:<request_id>` | aplica exactamente esa captura y su digest propio (stop -> INI -> start -> verificar) |
 | `pz_mods_reset` | borra los overrides y vuelve a la base del cliente |
+
+El callback legacy `pz_ok_mods_apply` sin `request_id` ya no aplica cambios:
+se rechaza y obliga a repetir la captura viva. `pz_ok_mods_apply:<request_id>`
+reemplaza al callback legacy porque liga la confirmacion al `request_id` y al
+`nonce` de la captura.
 
 Los callbacks **con `:cat`** son los nuevos: llevan el filtro para que no se
 pierda al paginar ni al activar un mod. Los parsers **toleran los formatos
@@ -283,7 +488,7 @@ el bot **no** toca el INI al vuelo: guarda un override por mod en
 /opt/backups/zomboid-mods-override.json     {"<mod_id>": "on" | "off"}
 ```
 
-Relativo a la **base** (la referencia del cliente):
+Relativo a la **base** (la captura viva confirmada del cliente):
 
 ```
 set efectivo = (base UNION "on") - "off"
@@ -292,8 +497,9 @@ set efectivo = (base UNION "on") - "off"
 - El override se **borra** solo cuando el estado pedido coincide con el de la
   base (asi el JSON queda lo mas chico posible).
 - El boton **Aplicar** reescribe `Mods=` / `WorkshopItems=` y reinicia.
-  `WorkshopItems=` conserva **todos** los items: desactivar un mod no
-  desinstala su contenido, asi que volverlo a activar es instantaneo.
+  `WorkshopItems=` contiene los items del cliente mas las dependencias y
+  overrides realmente necesarios; **no** es la union con los items viejos del
+  server.
 - El boton **Volver a la base** borra los overrides (no reinicia nada).
 - El sync **🧩 MODS = Cliente** respeta los overrides: el target es el set
   efectivo, no la base pelada.
@@ -325,7 +531,7 @@ la subcarpeta de version, que es el que carga B42) y avisa:
 
 **Catalogo.** Se arma escaneando
 `<volumen workshop>/content/108600/<item>/mods/<mod>/**/mod.info`. En el server
-hay **139 items** y **186 mods unicos** (todos los mods del `Mods=` estan
+hay **140 items** y **190 mods unicos** (todos los mods del `Mods=` estan
 incluidos). El escaneo tarda ~0.1 s y se cachea 5 min.
 
 Verificado el 2026-11-05 end-to-end en el VPS: se desactivo `87cruiser`, se
@@ -355,7 +561,7 @@ que se respetan al **agregar, quitar, activar o desactivar** mods. Viven en
 > **Desviacion documentada de la guia.** La guia pide mantener `Mods` y
 > `WorkshopItems` en el mismo orden. En B42 **no aplica**: son namespaces
 > distintos (`Mods` = ids de mod en orden de carga; `WorkshopItems` = ids del
-> Workshop a descargar). Hoy hay **57 mods y 139 items**: la correspondencia
+> Workshop a descargar). Hoy hay **173 mods y 140 items**: la correspondencia
 > 1:1 es imposible. El juego usa `Mods` para el orden y `WorkshopItems` solo
 > para que se descargue el contenido.
 
@@ -511,7 +717,7 @@ paso de 95 a 2 no activables.
 
 ### Filtro por categorias (panel MODS)
 
-Con 186 mods la lista era larga (23 paginas). El panel 🎛️ MODS tiene ahora una
+Con 190 mods la lista es larga. El panel 🎛️ MODS tiene ahora una
 **fila de filtros** arriba: 7 botones (📋 Todos + 6 grupos) en dos filas de 3
 y 4. El grupo activo se marca con ✅ y el panel dice
 **"📂 Mostrando: 🚗 Vehículos — 121 mods · página 1 de 16"**.
@@ -614,9 +820,12 @@ solo cambia la configuracion (`Mods=`), y se aplica con **Aplicar cambios**
 > Los mods que pisan **no se apagan solos**: solo se avisa. Si querés que no
 > tapen la textura, usá el boton que los apaga tambien.
 
-### Los 56 mods
+### Referencia legacy de 56 mods (no autoritativa)
 
-Los 56 que carga el cliente (orden de carga):
+Esta lista viene del fixture legacy `MOD_IDS.txt`; sirve para regresiones y
+consultas, **no** para el boton de captura viva ni para el estado real del
+server. La captura viva medida el 2026-11-16 tiene **212 mods / 253 items**.
+Los 56 ids legacy en su orden fixture eran:
 
 ```
 Expanded_Belt_B42;FixedLightOnBeltAF;NeatUI_Framework;WhoseKeyIsThis;FittedBarricades;
@@ -769,6 +978,13 @@ sudo docker exec coolify-db psql -U coolify -d coolify -tAc \
 El bot corre en el host y conecta a `127.0.0.1:27015`
 (`zomboid_control.RCON_HOST`). **Nunca** hacer port forwarding del 27015.
 
+La credencial se resuelve en este orden: `RCONPASSWORD` del contenedor activo
+(leida con una allowlist de una sola clave) y, solo como fallback local, el
+valor `RCONPassword` del INI. Si ninguna fuente contiene una credencial, o
+si RCON no responde, el preflight de `players_connected()` falla cerrado y
+no se permite ningun stop/restart/redeploy. Los scripts no imprimen la
+credencial ni el environment completo.
+
 ## Coolify: app id 8
 
 | Dato | Valor |
@@ -793,7 +1009,11 @@ Cloudflare desde el VPS, asi que el bot cae al endpoint local
 `http://127.0.0.1:8000/api/v1`).
 
 El token vive en `/opt/backups/coolify.env` (root-only) y **no** es el mismo que
-el de `InsForge\.env.local` (ese da 401). Redeploy a mano:
+el de `InsForge\.env.local` (ese da 401). El snapshot de rollback de
+`MOD_IDS`, `WORKSHOP_IDS` y `SELF_MANAGED_MODS` se obtiene por GET de la API
+de produccion y exige exactamente una fila `is_preview=False` por clave; si
+la API es ambigua, no se muta nada. Un PATCH ambiguo se reconcilia con GET y
+se restaura al valor previo si el estado cambio. Redeploy a mano:
 
 ```bash
 cd /data/coolify/applications/cggpgaytrcmy8kimlw4tn45l
@@ -808,8 +1028,8 @@ sudo docker compose up -d
 |---|---|
 | **Estado** | estado del server |
 | **Buscar updates** | items de Workshop desactualizados |
-| **🧩 MODS = Cliente** | deja el server identico al cliente (ver [MODS = Cliente](#mods--cliente-boton-del-bot)) |
-| **🎛️ MODS on/off** | listado de los 186 mods del server con check para activar/desactivar + reglas de carga + descarga de dependencias (ver [MODS on/off](#mods-onoff-boton-del-bot)) |
+| **🧩 MODS = Cliente** | alinea el server con la captura viva del cliente (ver [MODS = Cliente](#mods--cliente-captura-viva-del-boton)) |
+| **🎛️ MODS on/off** | listado de los 190 mods del server con check para activar/desactivar + reglas de carga + descarga de dependencias (ver [MODS on/off](#mods-onoff-botón-del-bot)) |
 | **👥 Usuarios** | submenu con botones: listado -> usuario -> eliminar / cambiar rol |
 | **🗺️ Mapa** | los tres toggles de la tabla de arriba |
 | **Aplicar todas** | reinicia aplicando las updates de Steam |
@@ -820,7 +1040,14 @@ sudo docker compose up -d
 El submenu de **Usuarios** es a botones: se muestra el listado (un boton por
 usuario), al tocar uno aparecen **🔑 Cambiar rol** (un boton por rol) y
 **🗑️ Eliminar usuario**, y al confirmar se ejecuta por RCON. Los comandos
-`/pz alta`, `/pz borrar` y `/pz rol` siguen funcionando.
+`/pz alta`, `/pz borrar` y `/pz rol` siguen funcionando. Si el alta genera una
+password, se entrega **intencionadamente** en un mensaje separado de Telegram;
+el resto del bot redacciona el valor en la frontera común. Ese envío usa una
+ruta explícita, acotada y con hasta tres reintentos.
+
+**🧩 MODS = Cliente** es el único botón que crea una captura nueva. **🎛️
+Aplicar cambios** reutiliza la captura vigente de ese botón; si no hay una
+vigente, indica que se pulse **🧩 MODS = Cliente** y no abre el collector.
 
 El submenu de **MODS on/off** es a botones tambien: pagina de 8 mods con
 `✅`/`❌`, tocá uno para alternarlo, y despues **✅ Aplicar cambios** (reinicia)
@@ -922,6 +1149,11 @@ actualiza a mano con cada cambio de version del juego (hoy `42.22.2`).
 
 ## Recrear el mundo desde cero
 
+> **Procedimiento histórico (2026-11-04).** Describe una recreación ya
+> ejecutada; no es reproducible con el tooling actual sin revisar cada paso.
+> Los backups de ese entonces son evidencia histórica y el paso que editaba la
+> DB de Coolify queda prohibido para cualquier mutación actual.
+
 Lo que se hizo el 2026-11-04, en orden:
 
 1. **Preflight**: 0 jugadores, backups existentes, imagen presente.
@@ -936,12 +1168,15 @@ Lo que se hizo el 2026-11-04, en orden:
 8. Quitar `ADMINPASSWORD` del `.env` y reiniciar para **comprobar que el mundo
    arranca sin ella**.
 9. Re-aplicar los ajustes manuales del INI ([tabla](#ini-ajustes-manuales)).
-10. Actualizar la DB de Coolify (env vars cifradas + `docker_compose`).
+10. Actualizar la DB de Coolify (env vars cifradas + `docker_compose`). **Paso
+    histórico**: el flujo vigente usa la API de Coolify y jamás edita esa DB a
+    mano.
 
 Los scripts de este paso viven en `G:\Proyectos\InsForge\tools\`
 (`ops-deploy-recreate.sh`, `ops-restore-whitelist.sh`, `ops-reapply-ini.sh`,
 `ops-final-check.sh`, `ops-update-coolify-db.sh`). No se versionan: quedan
-solo en la PC.
+solo en la PC. `ops-update-coolify-db.sh` y `tools\coolify-update.php` son
+**legacy** y no forman parte del procedimiento vigente.
 
 ### Verificacion del arranque
 
@@ -1023,6 +1258,11 @@ Arranque medido el **2026-11-09** (juego **42.22.2**, **173** mods, 8210 lineas)
 
 ## Backups
 
+> Los artefactos de recreación y actualización anteriores a los backups
+> transaccionales son **históricos**. No se deben asumir reproducibles con las
+> herramientas actuales: sus scripts y supuestos de Coolify ya no son el
+> procedimiento vigente.
+
 En `/opt/backups/` del VPS:
 
 | Artefacto | Que es |
@@ -1033,9 +1273,10 @@ En `/opt/backups/` del VPS:
 | `backup-pre-update-20261109-165541/` | backup antes de actualizar a 42.22.2: tar del volume de datos (28 MB), INI, SandboxVars, overrides de mods, version del juego y estado de los toggles de mapa |
 | `env-pre-recreate-<ts>` / `compose-pre-recreate-<ts>.yaml` | `.env` y compose previos |
 | `zomboid-mods-watch.py.bak-<ts>` | watcher anterior |
-| `zomboid_control.py` | libreria + CLI de control (RCON, docker, map toggles) |
+| `deploy-backups/<timestamp>-<token>/` | backups reversibles de los deploys recientes del controlador y del bot |
+| `zomboid_control.py` | libreria + CLI de control (RCON, docker, map toggles, captura viva y sync transaccional) |
 | `zomboid_control.py.bak-<ts>` | version anterior de la libreria (deploys del bot) |
-| `bot-telegram.py` | bot v5 |
+| `bot-telegram.py` | bot v6 (captura viva, preview/sync/apply con digest y redaccion comun) |
 | `bot.env` | token del bot (secreto, no versionar) |
 
 sha256 del snapshot del workshop:
@@ -1043,6 +1284,68 @@ sha256 del snapshot del workshop:
 ```
 2c987ea7c1fb3b706abeacd38424cd516ba724340b901da2878051e0e4cb32e1
 ```
+
+## Deploy operativo y consultas InsForge desde esta PC
+
+El deploy del controlador y del bot **no** se hace con comandos remotos
+mutantes inline. El procedimiento es:
+
+1. Crear un instalador LF-only en
+   `C:\Users\matia\AppData\Local\Temp\opencode`; validar `bash -n`, NUL/CR y
+   SHA-256 del payload.
+2. Subir el instalador con `tools\ssh-run.ps1 -UploadAndRunFile ...`; el
+   helper lo instala en `/tmp/x.sh`, toma el lock, verifica tipo/owner/tamano/
+   hash y ejecuta `bash /tmp/x.sh`.
+3. El instalador crea un backup en
+   `/opt/backups/deploy-backups/<timestamp>-<token>/`, compila el Python antes
+   de instalar, reinicia `insforge-backup-bot.service` solo cuando corresponde
+   y hace rollback automatico si falla la verificacion.
+4. Verificar por el canal de consulta: hashes, `systemctl`, import del modulo,
+   journal sin errores, contenedor activo, `PLAYERS=0`, listener RCON en
+   loopback, Coolify snapshot y cero residuos propios en `/tmp`.
+
+`G:\Proyectos\InsForge\tools\install-fail2ban.sh` es el instalador **legacy**
+(original, con `bantime=1h`). `tools\update-f2b.sh` representa la política
+posterior de ban 24 h con incremento exponencial; si se reutiliza, debe
+adaptarse al instalador LF-only y al transporte nuevos, no copiarse a mano con
+comandos inline.
+
+Para consultar la DB de InsForge sin escribir una API key en la configuracion
+estatica:
+
+```powershell
+G:\Proyectos\InsForge\tools\insforge-cli-db.ps1 `
+  -Project prod -SqlFile G:\ruta\consulta.sql
+G:\Proyectos\InsForge\tools\insforge-cli-db.ps1 `
+  -Project standby -SqlFile G:\ruta\consulta.sql
+```
+
+`insforge-cli-db.ps1` toma `INSFORGE_BD_API_KEY` o `BKUP_BD_API_KEY` desde
+`InsForge\.env.local`, materializa un `project.json` efimero con ACL privada y
+lo elimina al terminar. El SQL viaja por archivo y
+`run-insforge-query.js` lo entrega al CLI con argv nativo, conserva las
+comillas y resuelve dinamicamente `index.js` desde el PATH de `npx`; no hay
+ruta hardcodeada al cache npm.
+
+Para iniciar OpenCode contra el standby:
+
+```powershell
+G:\Proyectos\InsForge\tools\start-standby-opencode.ps1 `
+  -OpenCodeArguments @('--standalone')
+```
+
+`standby\opencode.json` usa la forma V2 `mcp.servers` y referencia
+`{env:BKUP_BD_API_KEY}`. El launcher inyecta la clave sólo mediante
+`ProcessStartInfo.EnvironmentVariables` del proceso hijo; no modifica el
+environment del padre y no la persiste en JSON, registro ni archivo nuevo.
+`prod\.insforge\project.json` y `standby\.insforge\project.json` no contienen
+API keys.
+
+El standby es **estado histórico de lectura**, no un failover automático. A
+fecha 2026-11-16, `SELECT 1` responde en producción, pero el backend standby
+devuelve HTTP 503. El launcher y la configuración standby quedaron validados
+localmente; la sincronización/read contra standby sigue bloqueada por ese
+503 y producción es el único backend verificado como activo.
 
 ## Comandos utiles en el VPS
 
@@ -1069,9 +1372,8 @@ sudo journalctl -u zomboid-mods-watch.service -n 50 --no-pager
 
 ## Pendientes
 
-- [ ] Regenerar el token de la API de Coolify (el boton Redeploy del bot
-      devuelve `401`).
-- [ ] Guardar la clave de la cuenta `admin` del server en un sitio seguro.
-- [ ] Verificacion final con el cliente conectado: entrar al mundo nuevo y
-      revisar el `console.txt` del cliente (`ERROR`, `AdvancedAnimator`,
-      `WorldDictionary`).
+- [ ] Coordinar la rotacion de las passwords `admin`, RCON y del server, y la
+      creacion de una identidad remota/SSH dedicada. Requiere una decision
+      operativa y no bloquea el deploy tecnico verificado.
+- [ ] Verificacion final con el cliente conectado: entrar al mundo y revisar
+      `console.txt` (`ERROR`, `AdvancedAnimator`, `WorldDictionary`).
