@@ -364,15 +364,19 @@ El bot reporta el avance en el mismo mensaje de Telegram.
   recientes en el journal.
 - Hashes instalados:
   `zomboid_control.py` = `92a0eb41de5e8424bfbb5bae4a8c727f4309f2ae7850563df634e1812c855c55`;
-  `bot-telegram.py` = `da6b30efadaf18d599e3d99a3a5d3e4fd26f5b065efbb2cdab9e3f6df10a191b`.
+  `bot-telegram.py` = `3af884bcaa158e6f7d7b943ff4210560773ac65b94b3381a010f4554eb36ec2d`.
   Modos/owner: `644 root:root` (controlador) y `700 root:root` (bot).
-- Ultimo backup reversible del deploy:
-  `/opt/backups/deploy-backups/20261116T224451Z-79d8cf3fc9a57366/`.
+- Ultimos backups reversibles del deploy:
+  `/opt/backups/deploy-backups/20261117T023422Z-a18c3dbe1956ac3a/` (codigo del
+  bot) y `/opt/backups/deploy-backups/20261117T023427Z-env-quotes/` (`.env`).
+  El anterior, `/opt/backups/deploy-backups/20261116T224451Z-79d8cf3fc9a57366/`,
+  conserva la version previa de ambos.
 - RCON escucha solo en `127.0.0.1:27015`. UFW queda activo y deja SSH 22 solo
   para la LAN y la red Coolify; no esta abierto a internet.
 - El audit final no encontro residuos propios en `/tmp` (`x.sh*`, `pz-up.*`,
   `pz-client-state-*`, payloads `*.new` ni `upload.*`).
-- El deploy **no reinicio el contenedor del juego**: sigue `Up 3 hours` con
+- El deploy **no reinicio el contenedor del juego**: en el momento de la
+  verificacion seguia `Up 3 hours` con
   `Mods=` (173) y `WorkshopItems=` (140) intactos. El watcher
   (`zomboid-mods-watch.timer`, cada 15 min) tampoco escribe el INI: su ultima
   corrida termino con `sin updates pendientes` y el mtime del INI es anterior
@@ -381,6 +385,20 @@ El bot reporta el avance en el mismo mensaje de Telegram.
   por clave): `MOD_IDS` 173 ids / 2463 chars, `WORKSHOP_IDS` 140 ids / 1539
   chars, `SELF_MANAGED_MODS='True'`. Las envs de la API coinciden byte a byte
   con el INI activo.
+- **`.env` normalizados (2026-11-16 22:34:27 -03)** con el instalador
+  transaccional `ops-normalize-env-quotes.sh`: `bot.env` y `coolify.env`
+  escriben los valores **entrecomillados** (`TG_TOKEN='...'`,
+  `COOLIFY_API_KEY='...'`). Es necesario porque el token real de Coolify
+  contiene `|`, que en una asignacion sin comillas bash interpretaria como
+  tuberia al hacer `source` del fichero. Backup 0600, reescritura atomica
+  conservando owner y modo (`600 root:root` y `600 mati:mati`), verificacion de
+  que el valor es byte a byte identico (SHA-256 antes/despues) y rollback
+  automatico. Verificado en el VPS: `source` de `bot.env` devuelve el token de
+  46 caracteres **sin comillas**, `Telegram getMe ok=True`, la API de Coolify
+  responde 200 con el key de 51 caracteres leido sin comillas y 0 errores en el
+  journal. `bot-telegram.py` se actualizo a la vez (`3af884bc...`) para que su
+  loader quite la comilla exterior; sin ese cambio el token habria llegado con
+  comillas a la API de Telegram.
 - **Parada y reencendido posterior (fuera del deploy)**: a las **21:46:05
   (-03)** el servidor se apagó por una accion **🛑 Apagar** desde Telegram
   (`zc.stop_container()`: `docker stop -t 120`, sin relanzar). No fue el deploy
@@ -411,11 +429,20 @@ El bot reporta el avance en el mismo mensaje de Telegram.
 - **Lock**: `$HOME/.pz-client-state.lock` se abre en modo **append** (nunca
   trunca un objetivo), solo si no es symlink y es del usuario SSH, y se
   fuerza a `0600`.
-- **Plantillas**: los valores interpolados se validan contra un charset
-  cerrado (`^[A-Za-z0-9._:/@+=,-]+$`) antes de sustituir. Sin ese filtro, un
-  token con `$(...)`, backticks o `;` inyectaria comandos en el `.env` que se
-  carga con `source` como root. En `install-bot.sh` los valores ademas van
-  entrecomillados en el `.env` destino.
+- **Plantillas**: los valores **no secretos** (`SSH_USER`, `SSH_HOST`,
+  `SERVIDOR_IP_PUBLICA`) se validan contra un charset cerrado
+  (`^[A-Za-z0-9._:/@+=,-]+$`) antes de sustituir: acaban como argumentos de
+  shell, hosts o rutas y no se entrecomillan.
+- **Secretos**: el destino **siempre** los escribe entrecomillados
+  (`KEY='valor'`) y el transporte lo **verifica mecanicamente tras sustituir**
+  (`Assert-SecretValueSingleQuoted`): aborta si el secreto aparece en el
+  archivo fuera de comillas simples. Dentro de comillas simples bash no
+  evalua nada, asi que el valor real es seguro aunque lleve `|`, `$(...)`, `;`
+  o espacios (el token de Coolify **lleva `|`**: un charset cerrado lo
+  rechazaria y dejaria el reinstalador bloqueado). Se prohiben la comilla
+  simple, los caracteres de control y los espacios en los extremos del valor.
+  Los consumidores (`bot-telegram.py`, `zomboid-mods-watch.py`,
+  `zomboid_control.py`) quitan la comilla exterior al leer el `.env`.
 - **Identidad SSH**: `SSH_USER` (`^[a-z_][a-z0-9_-]{0,31}$`) y los hosts
   (`^[A-Za-z0-9:][A-Za-z0-9.:_-]{0,253}$`) se validan antes de construir el
   argv de `ssh.exe`: un host que empiece por `-` lo interpretaria como opcion
