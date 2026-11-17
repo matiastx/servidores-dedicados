@@ -381,6 +381,17 @@ El bot reporta el avance en el mismo mensaje de Telegram.
   por clave): `MOD_IDS` 173 ids / 2463 chars, `WORKSHOP_IDS` 140 ids / 1539
   chars, `SELF_MANAGED_MODS='True'`. Las envs de la API coinciden byte a byte
   con el INI activo.
+- **Parada y reencendido posterior (fuera del deploy)**: a las **21:46:05
+  (-03)** el servidor se apagó por una accion **🛑 Apagar** desde Telegram
+  (`zc.stop_container()`: `docker stop -t 120`, sin relanzar). No fue el deploy
+  (que solo reinicio el bot) ni un apply: no hubo `docker start`, no se
+  escribio el INI, no hay quarantine y las envs de Coolify siguen en
+  173/140. Paro limpio (`Server stopped cleanly with exit code 0`, `SaveAll`
+  correcto, mundo de 215M integro). A las **22:36:34 (-03)** se reencendio
+  con un instalador LF-only en `/tmp/` (`bash /tmp/x.sh`), por la misma via
+  que exige el runbook: `SERVER STARTED` a los 140 s, **173 mods / 140
+  items**, catalogo 190, pendientes +0/-0, juego **42.22.2**, 0 `required mod
+  not found`, `PLAYERS=0` y RCON solo en `127.0.0.1:27015`.
 
 #### Endurecimiento del deploy, rollback y Coolify
 
