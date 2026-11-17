@@ -399,6 +399,17 @@ El bot reporta el avance en el mismo mensaje de Telegram.
   journal. `bot-telegram.py` se actualizo a la vez (`3af884bc...`) para que su
   loader quite la comilla exterior; sin ese cambio el token habria llegado con
   comillas a la API de Telegram.
+- **Ruta de reinstalacion completa verificada** (subida de `install-bot.sh`
+  con `-AllowSecretSubstitution`, sin ejecutarlo): los dos secretos viajan
+  entrecomillados, coinciden **byte a byte** con los desplegados (SHA-256
+  `092842247bd8...` y `09d65083dc26...`), el artefacto se borro del VPS y
+  `/tmp` quedo limpio. Al probarla aparecieron **dos fallos reales**, ya
+  corregidos: (1) `install-bot.sh` mentioning el nombre del placeholder en un
+  comentario hacia que el transporte sustituyera ahi el secreto (fuera de
+  comillas) y abortara por la invariante; (2) otro comentario contenia un
+  literal con la forma de placeholder que el fail-closed rechazaba. Ambos
+  comentarios se reescribieron y hay una regresion estatica que impide
+  reintroducirlos.
 - **Parada y reencendido posterior (fuera del deploy)**: a las **21:46:05
   (-03)** el servidor se apagó por una accion **🛑 Apagar** desde Telegram
   (`zc.stop_container()`: `docker stop -t 120`, sin relanzar). No fue el deploy
